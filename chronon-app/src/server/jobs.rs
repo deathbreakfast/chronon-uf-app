@@ -12,7 +12,11 @@ use super::helpers::{
 use super::query::apply_jobs_page_query;
 #[cfg(feature = "ssr")]
 use super::ssr_utils::{require_email_verified, require_session, resolve_job_id};
+#[cfg(feature = "ssr")]
+use super::CHRONON_ADMIN_PERMISSION;
 use super::{CreateJobRequest, Job, JobRevision, UpdateJobRequest};
+#[cfg(feature = "ssr")]
+use chronon_backend::redact_job_params_for_non_admin;
 
 /// Paginated jobs list with quick-search and structured filters.
 #[uf_product_macros::server]
@@ -22,6 +26,7 @@ pub async fn get_jobs_page(
 ) -> Result<Page<Job>, ServerFnError> {
     let ctx = higgs::Higgs::from_request().await?;
     require_session(&ctx)?;
+    let is_admin = uf_product::permissions::has_permission(CHRONON_ADMIN_PERMISSION).await;
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
 
@@ -30,6 +35,7 @@ pub async fn get_jobs_page(
         .await
         .into_iter()
         .map(backend_job_to_job)
+        .map(|j| redact_job_params_for_non_admin(j, is_admin))
         .collect();
     chronon_backend::sort_jobs_by_name(&mut jobs);
     apply_jobs_page_query(&mut jobs, &request);
@@ -54,12 +60,17 @@ pub async fn get_jobs_page(
 pub async fn get_jobs() -> Result<Vec<Job>, ServerFnError> {
     let ctx = higgs::Higgs::from_request().await?;
     require_session(&ctx)?;
+    let is_admin = uf_product::permissions::has_permission(CHRONON_ADMIN_PERMISSION).await;
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
 
     let jobs = backend.list_jobs().await;
 
-    let jobs: Vec<Job> = jobs.into_iter().map(backend_job_to_job).collect();
+    let jobs: Vec<Job> = jobs
+        .into_iter()
+        .map(backend_job_to_job)
+        .map(|j| redact_job_params_for_non_admin(j, is_admin))
+        .collect();
 
     Ok(jobs)
 }
@@ -114,6 +125,7 @@ pub async fn get_job(
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     let ctx = higgs::Higgs::from_request().await?;
     require_session(&ctx)?;
+    let is_admin = uf_product::permissions::has_permission(CHRONON_ADMIN_PERMISSION).await;
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
     let job = if let Some(j) = backend.get_job(&job_id_or_name).await {
@@ -122,11 +134,13 @@ pub async fn get_job(
         backend.get_job_by_name(&job_id_or_name).await
     };
 
-    Ok(job.map(backend_job_to_job))
+    Ok(job
+        .map(backend_job_to_job)
+        .map(|j| redact_job_params_for_non_admin(j, is_admin)))
 }
 
 /// Get all revisions for a job (by ID or name)
-#[uf_product_macros::server]
+#[uf_product_macros::server(permission = "ChrononAdmin")]
 pub async fn get_job_revisions(
     /// Job ID or job name whose revisions should be listed.
     job_id_or_name: String,

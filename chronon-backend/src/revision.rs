@@ -1,9 +1,27 @@
-//! Job revision redaction for client-facing server responses.
+//! Job revision and list/detail redaction for client-facing server responses.
 //!
-//! Mirrors upstream Chronon HTTP behavior: full snapshots remain in the store;
-//! wire responses omit actor identity and sensitive snapshot fields.
+//! Full snapshots stay in the Chronon store. Wire responses omit actor identity
+//! and sensitive snapshot fields. Non-admin job list/detail responses also clear
+//! params and schedule fields via [`redact_job_params_for_non_admin`].
+//!
+//! Teaching entry: crate root [Redact job params](../index.html#redact-job-params).
 
-use crate::types::JobRevision;
+use crate::types::{Job, JobRevision};
+
+/// Clear job params and cron on the wire when the session lacks `ChrononAdmin`.
+///
+/// Used by chronon-app job list/detail server functions so non-admin viewers
+/// cannot read script parameters or cron expressions from the ops UI.
+#[must_use]
+pub fn redact_job_params_for_non_admin(mut job: Job, is_admin: bool) -> Job {
+    if !is_admin {
+        job.params = serde_json::json!({});
+        job.cron = String::new();
+        job.next_run_at = None;
+        job.timezone = None;
+    }
+    job
+}
 
 /// Strips sensitive fields from a revision snapshot before returning it to clients.
 ///
@@ -28,8 +46,41 @@ pub fn redact_job_revision(mut revision: JobRevision) -> JobRevision {
 
 #[cfg(test)]
 mod tests {
-    use super::{redact_job_revision, redact_revision_snapshot};
-    use crate::types::JobRevision;
+    use super::{redact_job_params_for_non_admin, redact_job_revision, redact_revision_snapshot};
+    use crate::types::{Job, JobRevision, JobStatus};
+
+    fn sample_job() -> Job {
+        Job {
+            id: "job-1".into(),
+            name: "nightly".into(),
+            script_name: "reports.export".into(),
+            cron: "0 0 * * * *".into(),
+            status: JobStatus::Active,
+            revision: 1,
+            last_run_at: None,
+            next_run_at: Some("2026-01-02T00:00:00Z".into()),
+            timezone: Some("UTC".into()),
+            params: serde_json::json!({"token": "secret", "bucket": "prod"}),
+        }
+    }
+
+    #[test]
+    fn redact_job_params_for_non_admin_clears_params_and_cron_sad() {
+        let redacted = redact_job_params_for_non_admin(sample_job(), false);
+        assert_eq!(redacted.params, serde_json::json!({}));
+        assert_eq!(redacted.cron, "");
+        assert!(redacted.next_run_at.is_none());
+        assert!(redacted.timezone.is_none());
+        assert_eq!(redacted.name, "nightly");
+        assert_eq!(redacted.script_name, "reports.export");
+    }
+
+    #[test]
+    fn redact_job_params_for_admin_preserves_params_happy() {
+        let original = sample_job();
+        let kept = redact_job_params_for_non_admin(original.clone(), true);
+        assert_eq!(kept, original);
+    }
 
     #[test]
     fn redact_revision_snapshot_nulls_actor_and_params() {

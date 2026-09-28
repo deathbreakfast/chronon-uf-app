@@ -7,7 +7,7 @@ use super::ssr_utils::{require_session, resolve_job_names_for_model_runs};
 use super::{DashboardChartSeries, DashboardStats, RecentRun};
 
 /// Get dashboard statistics
-#[uf_product_macros::server]
+#[uf_product_macros::server(permission = "ChrononAdmin")]
 pub async fn get_dashboard_stats() -> Result<DashboardStats, ServerFnError> {
     let ctx = higgs::Higgs::from_request().await?;
     require_session(&ctx)?;
@@ -31,7 +31,7 @@ pub async fn get_dashboard_stats() -> Result<DashboardStats, ServerFnError> {
 }
 
 /// Get recent runs for dashboard
-#[uf_product_macros::server]
+#[uf_product_macros::server(permission = "ChrononAdmin")]
 pub async fn get_recent_runs(
     /// Maximum number of recent runs to return.
     limit: u32,
@@ -68,7 +68,7 @@ pub async fn get_recent_runs(
 ///
 /// Buckets runs into hourly (≤24h range) or daily buckets. Uses a bounded
 /// backend fetch (0.1.n limitation).
-#[uf_product_macros::server]
+#[uf_product_macros::server(permission = "ChrononAdmin")]
 pub async fn get_run_stats_series(
     /// Width of the trailing time window, in seconds, to aggregate run outcomes over.
     range_secs: i64,

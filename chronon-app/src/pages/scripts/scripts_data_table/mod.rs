@@ -51,6 +51,7 @@ pub fn ScriptsDataTable(
                     column_menu: false,
                     column_filter_button: false,
                     column_hide: false,
+                    show_table_grid: true,
                 }
             >
                 <DataTableEmptyView slot>

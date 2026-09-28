@@ -68,6 +68,9 @@ must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 return_self_not_must_use = "allow"
+# Its fix is `Option::map_or_default`, which the leptos-lints toolchain
+# (nightly-2025-05-14) does not have.
+map_unwrap_or = "allow"
 
 [profile.wasm-release]
 inherits = "release"
@@ -134,10 +137,6 @@ gauge = { git = "https://github.com/unified-field-dev/gauge", branch = "main", d
 lepton = { git = "https://github.com/unified-field-dev/lepton", branch = "main", default-features = false }
 lepton-shell = { git = "https://github.com/unified-field-dev/lepton-uf-app", branch = "main", default-features = false }
 lepton-auth = { git = "https://github.com/unified-field-dev/lepton", branch = "main", default-features = false }
-
-# Unify transitive deathbreakfast chronon-coordinator pins (higgs) onto uf-dev git.
-[patch."https://github.com/deathbreakfast/chronon-coordinator"]
-chronon-coordinator = { git = "https://github.com/unified-field-dev/chronon-coordinator", branch = "main" }
 
 # Unify crates.io uf-valence / chronon / orbital onto uf-dev git
 # (avoids duplicate ThemeInjection / Valence types — lepton-auth-ui pulls crates.io orbital).

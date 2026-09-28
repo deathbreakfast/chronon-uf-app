@@ -587,3 +587,22 @@ fn job_status_serde_roundtrip_happy_path() {
     let back: JobStatus = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back, JobStatus::Active);
 }
+
+/// Same guard `run_job_now` uses: System-shaped `actor_json` must fail closed.
+#[test]
+fn validate_external_job_actor_json_rejects_system_for_run_now_sad() {
+    let system = serde_json::json!({"System": {"operation": "platform_ttl"}});
+    let err = chronon_coordinator::validate_external_job_actor_json(&system).unwrap_err();
+    assert!(
+        err.to_string().contains("System"),
+        "expected System refuse message, got: {err}"
+    );
+}
+
+#[test]
+fn validate_external_job_actor_json_allows_user_actor_happy() {
+    let user = serde_json::json!({"User": {"user_id": "user:alice"}});
+    chronon_coordinator::validate_external_job_actor_json(&user).expect("user actor ok");
+    let service = serde_json::json!({"Service": {"name": "chronon_api"}});
+    chronon_coordinator::validate_external_job_actor_json(&service).expect("service actor ok");
+}

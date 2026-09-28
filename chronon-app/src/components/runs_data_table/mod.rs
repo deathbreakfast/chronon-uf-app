@@ -171,6 +171,7 @@ fn RunsFilledDataTable(
         column_menu: false,
         column_filter_button: false,
         column_hide: false,
+        show_table_grid: true,
     };
 
     if fill_height {

@@ -21,3 +21,7 @@ orbital-data = { workspace = true }
 orbital-paging = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+# run_now System-actor refuse guard (same helper chronon-app calls).
+chronon-coordinator = { workspace = true }

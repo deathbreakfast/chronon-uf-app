@@ -20,6 +20,9 @@
 //! - **`DataTable` query adapters** — Supports quick-search and structured filters for job, run,
 //!   and script tables via [`apply_jobs_page_query`], [`apply_runs_page_query`], and
 //!   [`apply_scripts_page_query`].
+//! - **Job param redaction** — Clears params and schedule fields for non-admin job
+//!   list/detail DTOs via [`redact_job_params_for_non_admin`].
+//!   [Get started](#redact-job-params)
 //!
 //! ## Validate ids
 //!
@@ -158,10 +161,48 @@
 //! On success `stats` carries `total_jobs`, `active_jobs`, `total_runs_today`, and
 //! `running_now` consumed by `chronon-app` dashboard server functions.
 //!
+//! ## Redact job params
+//!
+//! Job list/detail responses keep names and script identity visible to any
+//! signed-in Chronon viewer, while script parameters and cron belong to operators
+//! with `ChrononAdmin`. Call [`redact_job_params_for_non_admin`] after mapping a
+//! coordinator job into a UI [`Job`] and before returning it from a server
+//! function. Pass `is_admin` from the session's `ChrononAdmin` check.
+//!
+//! **Prerequisites:** An in-memory [`Job`] DTO (no Chronon IO in this helper).
+//!
+//! ```rust
+//! use chronon_backend::{redact_job_params_for_non_admin, Job, JobStatus};
+//!
+//! let job = Job {
+//!     id: "job-1".into(),
+//!     name: "nightly".into(),
+//!     script_name: "reports.export".into(),
+//!     cron: "0 0 * * * *".into(),
+//!     status: JobStatus::Active,
+//!     revision: 1,
+//!     last_run_at: None,
+//!     next_run_at: Some("2026-01-02T00:00:00Z".into()),
+//!     timezone: Some("UTC".into()),
+//!     params: serde_json::json!({"token": "secret"}),
+//! };
+//! let redacted = redact_job_params_for_non_admin(job, false);
+//! assert_eq!(redacted.params, serde_json::json!({}));
+//! assert!(redacted.cron.is_empty());
+//! assert_eq!(redacted.name, "nightly");
+//! ```
+//!
+//! Non-admin callers get empty `params` / `cron` and cleared schedule fields.
+//! Admins (`is_admin = true`) receive the job unchanged. Related:
+//! [`redact_job_revision`] strips actor and params from revision snapshots.
+//! Interactive `run_now` on platform System jobs is refused in `chronon-app`
+//! (schedule-only); this helper does not implement that gate.
+//!
 //! ## Examples
 //!
-//! Start with [Validate ids](#validate-ids). This crate's unit and integ suites are listed in
-//! `docs/VERIFICATION.md`. Runnable host: `examples/protected-chronon-host` (auth + dashboard KPIs).
+//! Start with [Validate ids](#validate-ids) or [Redact job params](#redact-job-params).
+//! This crate's unit and integ suites are listed in `docs/VERIFICATION.md`.
+//! Runnable host: `examples/protected-chronon-host` (auth + dashboard KPIs).
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
@@ -190,7 +231,9 @@ pub use page_query::{
     apply_jobs_page_query, apply_runs_page_query, apply_scripts_page_query,
     runs_page_needs_memory_scan,
 };
-pub use revision::{redact_job_revision, redact_revision_snapshot};
+pub use revision::{
+    redact_job_params_for_non_admin, redact_job_revision, redact_revision_snapshot,
+};
 pub use schedule::{
     apply_create_schedule, apply_update_payload_to_job, build_create_job_model,
     parse_run_once_datetime, recompute_next_run_for_cron, ChrononScheduleError,

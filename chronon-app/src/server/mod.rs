@@ -6,10 +6,10 @@
 //! unit/integration-testable without the host UI graph. Server functions run on
 //! SSR only and use [`higgs::Higgs::from_request()`] plus [`ssr_utils::require_session`]
 //! on every endpoint. Mutators `create_job` / `update_job` / `run_job_now` require
-//! Gauge permission `ChrononAdmin`; read endpoints stay session-gated only.
-//! Job CRUD additionally mirrors the UI email-verification gate via
-//! [`ssr_utils::require_email_verified`]. `get_job_revisions` redacts actor and
-//! params fields from revision snapshots before returning them to clients.
+//! Gauge permission `ChrononAdmin`. Job list/detail stay session-gated but omit
+//! job `params` unless the session holds `ChrononAdmin`. Run history, revisions,
+//! and dashboard run aggregates require `ChrononAdmin`. Job CRUD additionally
+//! mirrors the UI email-verification gate via [`ssr_utils::require_email_verified`].
 //!
 //! ## Errors
 //!

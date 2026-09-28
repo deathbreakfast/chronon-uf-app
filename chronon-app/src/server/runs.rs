@@ -94,7 +94,7 @@ async fn runs_page_from_request(
 }
 
 /// Get runs, optionally filtered by job (by ID or name)
-#[uf_product_macros::server]
+#[uf_product_macros::server(permission = "ChrononAdmin")]
 pub async fn get_runs(
     /// Optional job ID or job name to restrict results to a single job's runs.
     job_id_or_name: Option<String>,
@@ -139,7 +139,7 @@ pub async fn get_runs(
 }
 
 /// Paginated run history with quick-search and structured filters.
-#[uf_product_macros::server]
+#[uf_product_macros::server(permission = "ChrononAdmin")]
 pub async fn get_runs_page(
     /// `DataTable` paging/filter/search/sort request from the client.
     request: PageRequest,
@@ -152,7 +152,7 @@ pub async fn get_runs_page(
 }
 
 /// Get a single run by ID
-#[uf_product_macros::server]
+#[uf_product_macros::server(permission = "ChrononAdmin")]
 pub async fn get_run(
     /// Unique identifier of the run to look up.
     run_id: String,
@@ -200,6 +200,23 @@ pub async fn run_job_now(
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
 
+    // Published Chronon runtime still inherits stored job actor on run_now. Refuse
+    // interactive run_now for System-shaped platform jobs so ChrononAdmin cannot
+    // fire deletion/TTL scripts as System with caller-controlled params.
+    if let Some(job) = backend.get_job(&job_id).await {
+        if chronon_coordinator::validate_external_job_actor_json(&job.actor_json).is_err() {
+            return Err(ServerFnError::new(
+                "Platform System jobs cannot be triggered via run_now; they run on schedule only",
+            ));
+        }
+    } else if let Some(job) = backend.get_job_by_name(&job_id).await {
+        if chronon_coordinator::validate_external_job_actor_json(&job.actor_json).is_err() {
+            return Err(ServerFnError::new(
+                "Platform System jobs cannot be triggered via run_now; they run on schedule only",
+            ));
+        }
+    }
+
     backend
         .run_now_with_params(&job_id, params)
         .await
@@ -207,7 +224,7 @@ pub async fn run_job_now(
 }
 
 /// Paginated runs for a specific job with quick-search and structured filters.
-#[uf_product_macros::server]
+#[uf_product_macros::server(permission = "ChrononAdmin")]
 pub async fn get_job_runs_page(
     /// Job ID or job name whose runs should be listed.
     job_id_or_name: String,
