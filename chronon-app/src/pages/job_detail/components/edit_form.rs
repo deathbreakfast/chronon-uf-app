@@ -5,6 +5,8 @@ use orbital::primitives::{
 };
 use turf::inline_style_sheet_values;
 
+use crate::components::JobPoolSelect;
+
 /// Consolidated input for `JobEditForm`.
 #[derive(Clone, Copy)]
 pub struct JobEditFormInput {
@@ -20,6 +22,8 @@ pub struct JobEditFormInput {
     pub form_params_str: RwSignal<String>,
     /// Two-way bound enabled state
     pub form_enabled: RwSignal<bool>,
+    /// Two-way bound worker pool id
+    pub form_pool: RwSignal<String>,
 }
 
 /// Edit form card for modifying job configuration.
@@ -38,6 +42,7 @@ pub fn JobEditForm(
         form_timezone,
         form_params_str,
         form_enabled,
+        form_pool,
     } = form;
 
     let params_textarea_appearance = TextareaAppearance {
@@ -82,6 +87,10 @@ pub fn JobEditForm(
                 <Flex vertical=true gap=SpacingSize::Size60.flex_gap()>
                     <Label>"Timezone"</Label>
                     <Input appearance=InputAppearance::with_placeholder("UTC") bind=form_timezone />
+                </Flex>
+                <Flex vertical=true gap=SpacingSize::Size60.flex_gap()>
+                    <Label>"Worker pool"</Label>
+                    <JobPoolSelect pool=form_pool testid="job-edit-pool" />
                 </Flex>
                 <Flex vertical=true gap=SpacingSize::Size60.flex_gap()>
                     <Label>"Parameters (JSON)"</Label>

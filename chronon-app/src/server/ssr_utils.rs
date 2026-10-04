@@ -31,6 +31,14 @@ pub(super) fn chronon_backend(
         .ok_or_else(|| ServerFnError::new("Chronon backend not in request context"))
 }
 
+/// Pools the host offers: the context [`chronon_backend::ChrononPoolProvider`],
+/// or [`chronon_backend::default_chronon_pool_rows`] when the host supplies none.
+#[cfg(feature = "ssr")]
+pub(super) fn offered_pools() -> Vec<chronon_backend::ChrononPoolPickRow> {
+    leptos::context::use_context::<std::sync::Arc<dyn chronon_backend::ChrononPoolProvider>>()
+        .map_or_else(chronon_backend::default_chronon_pool_rows, |p| p.pools())
+}
+
 /// Require an authenticated session (`SessionSnapshot` / `session_user_id`).
 ///
 /// `SessionSnapshot` does not carry `email_verified`; use

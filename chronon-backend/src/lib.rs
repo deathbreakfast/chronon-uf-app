@@ -126,6 +126,7 @@
 //!     concurrency: 1,
 //!     timeout_seconds: 60,
 //!     max_retries: 0,
+//!     pool: None,
 //! };
 //! assert!(matches!(
 //!     build_create_job_model(&payload, "sig".into()),
@@ -161,6 +162,31 @@
 //! On success `stats` carries `total_jobs`, `active_jobs`, `total_runs_today`, and
 //! `running_now` consumed by `chronon-app` dashboard server functions.
 //!
+//! ## Worker pools
+//!
+//! A job's `pool` names the Chronon worker pool that claims its runs; `None`
+//! means [`DEFAULT_POOL`]. The host lists the pools it offers through a
+//! [`ChrononPoolProvider`] in Leptos context, and create/update server functions
+//! call [`resolve_job_pool`] so a crafted request can't park runs in a pool no
+//! worker drains. A job already stored in a pool the host stopped offering keeps
+//! it until an operator picks another.
+//!
+//! ```rust
+//! use chronon_backend::{resolve_job_pool, ChrononPoolPickRow};
+//!
+//! let offered = vec![ChrononPoolPickRow {
+//!     id: "chronon-mve-a".into(),
+//!     label: "chronon-mve-a".into(),
+//!     detail: String::new(),
+//! }];
+//! assert_eq!(
+//!     resolve_job_pool(Some("chronon-mve-a"), None, &offered).unwrap().as_deref(),
+//!     Some("chronon-mve-a"),
+//! );
+//! assert_eq!(resolve_job_pool(Some(""), Some("chronon-mve-a"), &offered).unwrap(), None);
+//! assert!(resolve_job_pool(Some("nobody-drains-this"), None, &offered).is_err());
+//! ```
+//!
 //! ## Redact job params
 //!
 //! Job list/detail responses keep names and script identity visible to any
@@ -185,6 +211,7 @@
 //!     next_run_at: Some("2026-01-02T00:00:00Z".into()),
 //!     timezone: Some("UTC".into()),
 //!     params: serde_json::json!({"token": "secret"}),
+//!     pool: None,
 //! };
 //! let redacted = redact_job_params_for_non_admin(job, false);
 //! assert_eq!(redacted.params, serde_json::json!({}));
@@ -210,6 +237,7 @@ mod dashboard;
 mod lookup;
 mod map;
 mod page_query;
+mod pools;
 mod revision;
 mod schedule;
 mod types;
@@ -230,6 +258,10 @@ pub use map::{
 pub use page_query::{
     apply_jobs_page_query, apply_runs_page_query, apply_scripts_page_query,
     runs_page_needs_memory_scan,
+};
+pub use pools::{
+    default_chronon_pool_rows, effective_job_pool, resolve_job_pool, ChrononPoolPickRow,
+    ChrononPoolProvider, UnknownPoolError, DEFAULT_POOL,
 };
 pub use revision::{
     redact_job_params_for_non_admin, redact_job_revision, redact_revision_snapshot,

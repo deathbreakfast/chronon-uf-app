@@ -31,7 +31,7 @@ cargo test -p chronon-uf-app-e2e --features ssr --test boundary_contract
 |----|---------|
 | `pw-chronon-auth-gate-*` | Anon gated; admin sees dashboard |
 | `pw-chronon-dashboard-*` | KPI / seeded job visible; empty trend does not crash |
-| `pw-chronon-jobs-*` | List→detail; unknown job; unverified create blocked |
+| `pw-chronon-jobs-*` | List→detail; unknown job; unverified create blocked; host pool provider rows in the create and edit pickers, edited pool persists |
 | `pw-chronon-run-now-*` | Admin run-now; non-admin denied / hidden |
 | `pw-chronon-runs-*` | List→detail; unknown run |
 | `pw-chronon-scripts-*` | Script catalog lists lab script |

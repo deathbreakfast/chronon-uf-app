@@ -14,6 +14,7 @@ pub(super) struct JobDetailFormState {
     pub enabled: RwSignal<bool>,
     pub params: RwSignal<serde_json::Value>,
     pub params_str: RwSignal<String>,
+    pub pool: RwSignal<String>,
 }
 
 #[derive(Clone)]
@@ -23,6 +24,7 @@ pub(super) struct JobDetailDefaults {
     pub timezone: String,
     pub params: serde_json::Value,
     pub enabled: bool,
+    pub pool: String,
 }
 
 pub(super) fn restore_form_state(form: &JobDetailFormState, defaults: &JobDetailDefaults) {
@@ -32,6 +34,7 @@ pub(super) fn restore_form_state(form: &JobDetailFormState, defaults: &JobDetail
     form.params.set(defaults.params.clone());
     form.params_str.set(pretty_json(&defaults.params));
     form.enabled.set(defaults.enabled);
+    form.pool.set(defaults.pool.clone());
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -41,6 +44,7 @@ struct UpdateFormValues {
     timezone: String,
     params: serde_json::Value,
     enabled: bool,
+    pool: String,
 }
 
 fn build_update_payload_from_values(values: UpdateFormValues) -> UpdateJobRequest {
@@ -55,6 +59,7 @@ fn build_update_payload_from_values(values: UpdateFormValues) -> UpdateJobReques
         },
         params,
         enabled: values.enabled,
+        pool: Some(values.pool),
     }
 }
 
@@ -65,6 +70,7 @@ fn build_update_payload(form: &JobDetailFormState) -> UpdateJobRequest {
         timezone: form.timezone.get(),
         params: form.params.get(),
         enabled: form.enabled.get(),
+        pool: form.pool.get(),
     })
 }
 
@@ -185,6 +191,7 @@ mod tests {
             timezone: String::new(),
             params: serde_json::Value::Null,
             enabled: true,
+            pool: "chronon-mve-a".to_string(),
         });
 
         assert_eq!(payload.job_name, "job-a");
@@ -192,6 +199,7 @@ mod tests {
         assert_eq!(payload.timezone, None);
         assert_eq!(payload.params, serde_json::json!({}));
         assert!(payload.enabled);
+        assert_eq!(payload.pool.as_deref(), Some("chronon-mve-a"));
     }
 
     #[test]

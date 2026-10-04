@@ -84,6 +84,9 @@ pub struct Job {
     pub timezone: Option<String>,
     /// JSON parameters passed to the script on each run.
     pub params: serde_json::Value,
+    /// Worker pool the job's runs are claimed from; `None` means [`crate::DEFAULT_POOL`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool: Option<String>,
 }
 
 /// Run DTO consumed by Chronon UI pages.
@@ -183,6 +186,10 @@ pub struct UpdateJobRequest {
     pub params: serde_json::Value,
     /// Whether the job should be enabled after this update.
     pub enabled: bool,
+    /// Worker pool for the job's runs; `None` keeps the stored pool, blank resets to
+    /// [`crate::DEFAULT_POOL`].
+    #[serde(default)]
+    pub pool: Option<String>,
 }
 
 /// Schedule kind chosen when creating a new job.
@@ -222,6 +229,9 @@ pub struct CreateJobRequest {
     pub timeout_seconds: u32,
     /// Maximum number of automatic retries on failure.
     pub max_retries: u32,
+    /// Worker pool for the job's runs; `None` or blank means [`crate::DEFAULT_POOL`].
+    #[serde(default)]
+    pub pool: Option<String>,
 }
 
 fn default_params() -> serde_json::Value {

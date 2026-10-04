@@ -10,7 +10,9 @@ use leptos_router::NavigateOptions;
 use orbital::components::{ContentContainer, SpacingSize, Title3};
 use orbital::primitives::{Button, ButtonAppearance, Flex, MessageBar, MessageBarIntent};
 
-use crate::server::{create_job, get_scripts, CreateJobRequest, CreateJobScheduleType, Script};
+use crate::server::{
+    create_job, get_scripts, CreateJobRequest, CreateJobScheduleType, Script, DEFAULT_POOL,
+};
 use components::{
     ActionsSection, AdvancedOptionsSection, BasicInfoSection, ParametersSection, ScheduleSection,
 };
@@ -50,6 +52,7 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
     let concurrency = RwSignal::new(String::from("1"));
     let timeout_seconds = RwSignal::new(String::from("300"));
     let max_retries = RwSignal::new(String::from("3"));
+    let pool = RwSignal::new(String::from(DEFAULT_POOL));
     let create_loading = RwSignal::new(false);
     let create_error = RwSignal::new(None::<String>);
 
@@ -156,6 +159,7 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
             concurrency: concurrency.get().parse::<u32>().unwrap_or(1),
             timeout_seconds: timeout_seconds.get().parse::<u32>().unwrap_or(300),
             max_retries: max_retries.get().parse::<u32>().unwrap_or(3),
+            pool: Some(pool.get()),
         };
 
         leptos::task::spawn_local_scoped(async move {
@@ -223,6 +227,7 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
                         concurrency=concurrency
                         timeout_seconds=timeout_seconds
                         max_retries=max_retries
+                        pool=pool
                     />
                     </div>
 
