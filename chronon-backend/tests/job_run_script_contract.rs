@@ -26,6 +26,7 @@ fn sample_job(name: &str, script: &str, status: JobStatus) -> Job {
         next_run_at: None,
         timezone: None,
         params: serde_json::json!({}),
+        pool: None,
     }
 }
 
@@ -171,6 +172,7 @@ fn create_job_manual_schedule_happy_path() {
         concurrency: 2,
         timeout_seconds: 30,
         max_retries: 1,
+        pool: None,
     };
     let job = build_create_job_model(&payload, "sig".into()).expect("create");
     let ui = backend_job_to_job(job);
@@ -192,6 +194,7 @@ fn create_job_run_once_schedule_happy_path() {
         concurrency: 1,
         timeout_seconds: 60,
         max_retries: 0,
+        pool: None,
     };
     let job = build_create_job_model(&payload, "sig".into()).expect("create");
     assert!(job.run_once_at.is_some());
@@ -211,6 +214,7 @@ fn create_job_empty_run_once_sad() {
         concurrency: 1,
         timeout_seconds: 60,
         max_retries: 0,
+        pool: None,
     };
     let err = build_create_job_model(&payload, "sig".into()).expect_err("empty run-once");
     assert!(matches!(

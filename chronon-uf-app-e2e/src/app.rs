@@ -32,6 +32,7 @@ pub fn App() -> impl IntoView {
         provide_context(crate::e2e_higgs_config());
         provide_context(crate::e2e_chronon_backend());
         provide_context(crate::e2e_registry());
+        provide_context(crate::e2e_pool_provider());
         wire_gauge_permissions_bridge();
     }
     provide_shell_auth_menu(|| view! { <HarnessAuthMenu /> });

@@ -16,6 +16,8 @@ pub struct JobInfoCardInput {
     pub display_cron: Memo<String>,
     /// Timezone to display
     pub display_timezone: Memo<String>,
+    /// Worker pool to display
+    pub display_pool: Memo<String>,
     /// Parameters JSON value to display
     pub display_params: Memo<serde_json::Value>,
     /// Last run time string
@@ -35,6 +37,7 @@ pub fn JobInfoCard(
         display_script_name,
         display_cron,
         display_timezone,
+        display_pool,
         display_params,
         last_run,
         next_run,
@@ -86,7 +89,7 @@ pub fn JobInfoCard(
                     <Subtitle2>"Configuration"</Subtitle2>
                     <InfoLabelInfo slot>
                         <Caption1>
-                            "Read-only snapshot of the selected revision: script, schedule, parameters, and recent run times."
+                            "Read-only snapshot of the selected revision: script, schedule, worker pool, parameters, and recent run times."
                         </Caption1>
                     </InfoLabelInfo>
                 </InfoLabel>
@@ -104,6 +107,9 @@ pub fn JobInfoCard(
 
                     <GridItem><Caption2 class=class_names.label>"Timezone"</Caption2></GridItem>
                     <GridItem><Body1>{move || display_timezone.get()}</Body1></GridItem>
+
+                    <GridItem><Caption2 class=class_names.label>"Worker pool"</Caption2></GridItem>
+                    <GridItem><Body1 attr:data-testid="job-detail-pool">{move || display_pool.get()}</Body1></GridItem>
 
                     <GridItem>
                         <InfoLabel>

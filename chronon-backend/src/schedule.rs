@@ -197,10 +197,20 @@ pub fn build_create_job_model(
         "backoff_multiplier": 2.0_f64,
         "max_delay_ms": 60000_u64
     });
+    job.pool = stored_pool(payload.pool.as_deref());
     job.updated_at = chrono::Utc::now();
 
     apply_create_schedule(&mut job, payload)?;
     Ok(job)
+}
+
+/// Trimmed pool for `Job.pool`; blank stores as `None` (the default pool).
+///
+/// Offer checks live in [`crate::resolve_job_pool`], which the server runs first.
+fn stored_pool(pool: Option<&str>) -> Option<String> {
+    pool.map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
 }
 
 /// Applies mutable update payload fields to a loaded job model.
@@ -219,6 +229,9 @@ pub fn apply_update_payload_to_job(
     updated_job.timezone.clone_from(&payload.timezone);
     updated_job.params_json = normalized_params(payload.params.clone());
     updated_job.enabled = payload.enabled;
+    if let Some(pool) = payload.pool.as_deref() {
+        updated_job.pool = stored_pool(Some(pool));
+    }
 
     recompute_next_run_for_cron(cron_expr_for_recompute.as_deref(), &mut updated_job)?;
     updated_job.updated_at = chrono::Utc::now();

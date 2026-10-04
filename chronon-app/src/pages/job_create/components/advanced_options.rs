@@ -6,11 +6,11 @@ use orbital::primitives::{
 use orbital_motion::{OrbitalPresence, PresenceMotion};
 use turf::inline_style_sheet_values;
 
-use crate::components::ChrononHelpSectionHeader;
+use crate::components::{ChrononHelpSectionHeader, JobPoolSelect};
 
 use super::FormSectionCard;
 
-/// Expandable advanced job configuration inputs (concurrency, timeout, retries).
+/// Expandable advanced job configuration inputs (concurrency, timeout, retries, worker pool).
 #[component]
 pub fn AdvancedOptionsSection(
     /// Two-way signal controlling whether to show advanced.
@@ -21,6 +21,8 @@ pub fn AdvancedOptionsSection(
     timeout_seconds: RwSignal<String>,
     /// Two-way signal holding the max retries.
     max_retries: RwSignal<String>,
+    /// Two-way signal holding the worker pool id.
+    pool: RwSignal<String>,
 ) -> impl IntoView {
     let (style_sheet, class_names) = inline_style_sheet_values! {
         .SectionTitle {
@@ -67,7 +69,7 @@ pub fn AdvancedOptionsSection(
                         title="Advanced Options"
                         info=view! {
                             <Caption1>
-                                "Concurrency limits parallel runs. Timeout stops a run after the given seconds. Max retries re-attempts failed runs."
+                                "Concurrency limits parallel runs. Timeout stops a run after the given seconds. Max retries re-attempts failed runs. Worker pool picks which workers claim the runs."
                             </Caption1>
                         }.into_any()
                     />
@@ -83,6 +85,7 @@ pub fn AdvancedOptionsSection(
                         "Concurrency: " {move || concurrency.get()}
                         " | Timeout: " {move || timeout_seconds.get()} "s"
                         " | Retries: " {move || max_retries.get()}
+                        " | Pool: " {move || pool.get()}
                     </Caption2>
                 </Show>
 
@@ -120,6 +123,10 @@ pub fn AdvancedOptionsSection(
                                 </div>
                             </GridItem>
                         </Grid>
+                        <div class=class_names.form_field>
+                            <Label>"Worker pool"</Label>
+                            <JobPoolSelect pool=pool testid="job-pool" />
+                        </div>
                     </div>
                 </OrbitalPresence>
             </FormSectionCard>
