@@ -11,10 +11,10 @@ use super::helpers::{
 #[cfg(feature = "ssr")]
 use super::query::apply_jobs_page_query;
 #[cfg(feature = "ssr")]
-use super::ssr_utils::{require_email_verified, require_session, resolve_job_id};
+use super::ssr_utils::{offered_pools, require_email_verified, require_session, resolve_job_id};
 #[cfg(feature = "ssr")]
 use super::CHRONON_ADMIN_PERMISSION;
-use super::{CreateJobRequest, Job, JobRevision, UpdateJobRequest};
+use super::{ChrononPoolPickRow, CreateJobRequest, Job, JobRevision, UpdateJobRequest};
 #[cfg(feature = "ssr")]
 use chronon_backend::redact_job_params_for_non_admin;
 
@@ -99,6 +99,9 @@ pub async fn create_job(
     let descriptor = registry
         .get(&script_name)
         .ok_or_else(|| ServerFnError::new(format!("Script '{}' not found", script_name)))?;
+
+    chronon_backend::resolve_job_pool(payload.pool.as_deref(), None, &offered_pools())
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     ensure_job_name_available(backend, &job_name).await?;
     let job = build_create_job_model(&payload, descriptor.signature_hash.to_string())
@@ -198,10 +201,25 @@ pub async fn update_job(
         .ok_or_else(|| ServerFnError::new(format!("Job {} not found", job_id_or_name)))?;
 
     let existing_job = load_existing_job_for_update(backend, &actual_job_id).await?;
+    chronon_backend::resolve_job_pool(
+        payload.pool.as_deref(),
+        existing_job.pool.as_deref(),
+        &offered_pools(),
+    )
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
     let updated_job = apply_update_payload_to_job(existing_job, &payload)
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     let valence = ctx
         .valence()
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     persist_updated_job_config(backend, &valence, &actual_job_id, updated_job).await
+}
+
+/// Lists the worker pools a job can be pinned to on this host.
+#[uf_product_macros::server(permission = "ChrononAdmin")]
+pub async fn list_chronon_job_pools() -> Result<Vec<ChrononPoolPickRow>, ServerFnError> {
+    let ctx = higgs::Higgs::from_request().await?;
+    require_session(&ctx)?;
+    require_email_verified().await?;
+    Ok(offered_pools())
 }

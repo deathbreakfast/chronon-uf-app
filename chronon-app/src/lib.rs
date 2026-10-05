@@ -103,8 +103,12 @@
 //! Job pages list scheduled work with cron or run-once schedules.
 //! [`ChrononJobsPage`] loads [`get_jobs_page`] for the index; [`ChrononJobCreatePage`] calls
 //! [`create_job`] after email verification; [`ChrononJobDetailPage`] uses [`update_job`] to
-//! change cron, params, or enabled state. Open these routes when operators add schedules or
-//! pause a noisy job.
+//! change cron, params, pool, or enabled state. Open these routes when operators add schedules
+//! or pause a noisy job.
+//!
+//! Both forms pick a worker pool from [`list_chronon_job_pools`]. Hosts that pin Chronon
+//! workers to Pion pools put an `Arc<dyn ChrononPoolProvider>` in request context; without
+//! one the picker offers only `general`, and saves naming any other pool are rejected.
 //!
 //! **Prerequisites:** Routes mounted; job names must pass `chronon_backend::validate_job_name`;
 //! create and edit require a verified email.
@@ -132,6 +136,7 @@
 //!     concurrency: 1,
 //!     timeout_seconds: 60,
 //!     max_retries: 0,
+//!     pool: None,
 //! }).await?;
 //!
 //! update_job(
@@ -142,6 +147,7 @@
 //!         timezone: None,
 //!         params: serde_json::json!({}),
 //!         enabled: false,
+//!         pool: None,
 //!     },
 //! ).await?;
 //! ```
@@ -302,9 +308,10 @@ pub use pages::{
 pub use server::{
     create_job, get_dashboard_stats, get_job, get_job_revisions, get_job_runs_page, get_jobs,
     get_jobs_page, get_recent_runs, get_run, get_run_stats_series, get_runs, get_runs_page,
-    get_scripts, get_scripts_page, run_job_now, update_job, DashboardChartPoint,
-    DashboardChartSeries, DashboardStats, Job, JobRevision, JobStatus, RecentRun, Run, RunStatus,
-    Script, ScriptParam, UpdateJobRequest, CHRONON_ADMIN_PERMISSION,
+    get_scripts, get_scripts_page, list_chronon_job_pools, run_job_now, update_job,
+    ChrononPoolPickRow, ChrononPoolProvider, DashboardChartPoint, DashboardChartSeries,
+    DashboardStats, Job, JobRevision, JobStatus, RecentRun, Run, RunStatus, Script, ScriptParam,
+    UpdateJobRequest, CHRONON_ADMIN_PERMISSION,
 };
 
 // Define the Chronon application metadata.

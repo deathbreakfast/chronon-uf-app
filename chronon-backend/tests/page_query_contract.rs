@@ -22,6 +22,7 @@ fn sample_job(name: &str, script: &str, status: JobStatus) -> Job {
         next_run_at: None,
         timezone: None,
         params: serde_json::json!({}),
+        pool: None,
     }
 }
 

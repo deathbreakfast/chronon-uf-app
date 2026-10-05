@@ -17,6 +17,7 @@ fn sample_job(name: &str, script: &str, status: JobStatus) -> Job {
         next_run_at: None,
         timezone: None,
         params: serde_json::json!({}),
+        pool: None,
     }
 }
 
@@ -287,6 +288,7 @@ fn build_create_job_model_manual_defaults_happy_path() {
         concurrency: 99,
         timeout_seconds: 120,
         max_retries: 55,
+        pool: None,
     };
     let job = build_create_job_model(&payload, "sig-hash".into()).expect("build");
     assert_eq!(job.job_name, "nightly-cleanup");
@@ -308,6 +310,7 @@ fn build_create_job_model_rejects_empty_job_name_sad() {
         concurrency: 1,
         timeout_seconds: 60,
         max_retries: 0,
+        pool: None,
     };
     let err = build_create_job_model(&payload, "sig".into()).expect_err("blank name");
     assert!(matches!(err, ChrononScheduleError::Id(_)));
@@ -327,6 +330,7 @@ fn build_create_job_model_rejects_empty_cron_sad() {
         concurrency: 1,
         timeout_seconds: 60,
         max_retries: 0,
+        pool: None,
     };
     let err = build_create_job_model(&payload, "sig".into()).expect_err("empty cron");
     assert!(matches!(err, ChrononScheduleError::MissingCron));
@@ -572,6 +576,7 @@ fn apply_update_payload_to_job_normalizes_null_params_happy_path() {
         timezone: None,
         params: serde_json::Value::Null,
         enabled: false,
+        pool: None,
     };
     let updated = apply_update_payload_to_job(existing, &payload).expect("update");
     assert_eq!(updated.job_name, "new-name");
@@ -605,4 +610,106 @@ fn validate_external_job_actor_json_allows_user_actor_happy() {
     chronon_coordinator::validate_external_job_actor_json(&user).expect("user actor ok");
     let service = serde_json::json!({"Service": {"name": "chronon_api"}});
     chronon_coordinator::validate_external_job_actor_json(&service).expect("service actor ok");
+}
+
+fn pion_pools() -> Vec<ChrononPoolPickRow> {
+    let mut rows = default_chronon_pool_rows();
+    rows.push(ChrononPoolPickRow {
+        id: "chronon-mve-a".into(),
+        label: "chronon-mve-a".into(),
+        detail: "Chronon workers on the MVE cell".into(),
+    });
+    rows
+}
+
+#[test]
+fn resolve_job_pool_accepts_offered_and_default_happy_path() {
+    let offered = pion_pools();
+    assert_eq!(
+        resolve_job_pool(Some(" chronon-mve-a "), None, &offered),
+        Ok(Some("chronon-mve-a".into()))
+    );
+    assert_eq!(
+        resolve_job_pool(None, Some("chronon-mve-a"), &offered),
+        Ok(None)
+    );
+    assert_eq!(
+        resolve_job_pool(Some(DEFAULT_POOL), None, &[]),
+        Ok(Some(DEFAULT_POOL.into())),
+        "default pool passes even when the host lists nothing"
+    );
+}
+
+#[test]
+fn reject_unknown_pool_id() {
+    let offered = pion_pools();
+    for pool in ["chronon-mve-b", "boson-mve-a", "GENERAL"] {
+        let err = resolve_job_pool(Some(pool), None, &offered).expect_err(pool);
+        assert_eq!(err.pool, pool);
+        assert!(err.to_string().contains("not offered"), "{err}");
+    }
+}
+
+#[test]
+fn resolve_job_pool_keeps_retired_current_pool_sad() {
+    assert_eq!(
+        resolve_job_pool(Some("retired"), Some("retired"), &pion_pools()),
+        Ok(Some("retired".into()))
+    );
+}
+
+#[test]
+fn build_create_job_model_stores_pool_happy_path() {
+    let payload = CreateJobRequest {
+        job_name: "pooled".into(),
+        script_name: "cleanup_script".into(),
+        schedule_type: CreateJobScheduleType::Manual,
+        cron_expr: None,
+        timezone: None,
+        run_once_at: None,
+        params: serde_json::json!({}),
+        concurrency: 1,
+        timeout_seconds: 60,
+        max_retries: 0,
+        pool: Some(" chronon-mve-a ".into()),
+    };
+    let job = build_create_job_model(&payload, "sig".into()).expect("build");
+    assert_eq!(job.pool.as_deref(), Some("chronon-mve-a"));
+    assert_eq!(
+        backend_job_to_job(job).pool.as_deref(),
+        Some("chronon-mve-a")
+    );
+}
+
+#[test]
+fn apply_update_payload_blank_pool_resets_to_default_sad() {
+    let mut existing = chronon_core::Job::new("pooled", "cleanup_script");
+    existing.pool = Some("chronon-mve-a".into());
+    let payload = UpdateJobRequest {
+        job_name: "pooled".into(),
+        cron_expr: None,
+        timezone: None,
+        params: serde_json::json!({}),
+        enabled: true,
+        pool: Some("   ".into()),
+    };
+    let updated = apply_update_payload_to_job(existing, &payload).expect("update");
+    assert_eq!(updated.pool, None);
+    assert_eq!(effective_job_pool(updated.pool.as_deref()), DEFAULT_POOL);
+}
+
+#[test]
+fn apply_update_payload_omitted_pool_keeps_stored_happy_path() {
+    let mut existing = chronon_core::Job::new("pooled", "cleanup_script");
+    existing.pool = Some("chronon-mve-a".into());
+    let payload = UpdateJobRequest {
+        job_name: "renamed".into(),
+        cron_expr: None,
+        timezone: None,
+        params: serde_json::json!({}),
+        enabled: true,
+        pool: None,
+    };
+    let updated = apply_update_payload_to_job(existing, &payload).expect("update");
+    assert_eq!(updated.pool.as_deref(), Some("chronon-mve-a"));
 }

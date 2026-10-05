@@ -514,6 +514,32 @@ pub fn e2e_chronon_backend() -> Arc<dyn ChrononCoordinatorBackend> {
     Arc::clone(&state().chronon_backend)
 }
 
+/// Extra pool the E2E job pool picker offers next to `general`.
+pub const E2E_POOL: &str = "e2e-pool-a";
+
+struct E2ePools;
+
+impl chronon_app::ChrononPoolProvider for E2ePools {
+    fn pools(&self) -> Vec<chronon_app::ChrononPoolPickRow> {
+        vec![
+            chronon_app::ChrononPoolPickRow {
+                id: "general".to_string(),
+                label: "general (default)".to_string(),
+                detail: "Pool every worker drains.".to_string(),
+            },
+            chronon_app::ChrononPoolPickRow {
+                id: E2E_POOL.to_string(),
+                label: E2E_POOL.to_string(),
+                detail: "Pool a host pins dedicated Chronon workers to.".to_string(),
+            },
+        ]
+    }
+}
+
+pub fn e2e_pool_provider() -> Arc<dyn chronon_app::ChrononPoolProvider> {
+    Arc::new(E2ePools)
+}
+
 pub fn e2e_registry() -> Arc<ScriptRegistry> {
     Arc::clone(&state().registry)
 }

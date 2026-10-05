@@ -61,6 +61,7 @@ mod tests {
             next_run_at: Some("2026-01-02T00:00:00Z".into()),
             timezone: Some("UTC".into()),
             params: serde_json::json!({"token": "secret", "bucket": "prod"}),
+            pool: None,
         }
     }
 

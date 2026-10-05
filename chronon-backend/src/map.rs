@@ -23,6 +23,7 @@ pub fn backend_job_to_job(j: CoreJob) -> Job {
         next_run_at: j.next_run_at.map(|dt| dt.to_rfc3339()),
         timezone: j.timezone,
         params: j.params_json,
+        pool: j.pool,
     }
 }
 

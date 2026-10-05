@@ -20,6 +20,8 @@
 //! helpers so Orbital `paths::*` format strings cannot smuggle extra segments.
 //! Missing session, missing Chronon coordinator context, and coordinator IO
 //! failures are also `ServerFnError` strings at this boundary.
+//! A job pool the host's [`chronon_backend::ChrononPoolProvider`] does not offer
+//! fails create/update with `Pool '…' is not offered by this host`.
 
 mod dashboard;
 mod helpers;
@@ -32,7 +34,10 @@ mod ssr_utils;
 mod types;
 
 pub use dashboard::{get_dashboard_stats, get_recent_runs, get_run_stats_series};
-pub use jobs::{create_job, get_job, get_job_revisions, get_jobs, get_jobs_page, update_job};
+pub use jobs::{
+    create_job, get_job, get_job_revisions, get_jobs, get_jobs_page, list_chronon_job_pools,
+    update_job,
+};
 pub use runs::{get_job_runs_page, get_run, get_runs, get_runs_page, run_job_now};
 pub use scripts::{get_scripts, get_scripts_page};
 pub use types::*;

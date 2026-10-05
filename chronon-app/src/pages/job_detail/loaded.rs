@@ -17,7 +17,7 @@ use super::display::{
 use crate::live::{
     chronon_run_event_is_status, chronon_run_event_matches_job, ChrononJobRunSubscription,
 };
-use crate::server::{get_job, Job, JobRevision, JobStatus, Script};
+use crate::server::{effective_job_pool, get_job, Job, JobRevision, JobStatus, Script};
 
 /// Reactive body for a successfully loaded job.
 #[allow(clippy::too_many_lines)]
@@ -41,6 +41,7 @@ pub(super) fn JobDetailLoaded(
     let job_script = job.script_name.clone();
     let job_timezone = job.timezone.clone().unwrap_or_default();
     let job_params = normalized_params(&job.params);
+    let job_pool = effective_job_pool(job.pool.as_deref()).to_string();
     let job_enabled_init = job.status == JobStatus::Active;
     let defaults = JobDetailDefaults {
         name: job_name.clone(),
@@ -48,6 +49,7 @@ pub(super) fn JobDetailLoaded(
         timezone: job_timezone.clone(),
         params: job_params.clone(),
         enabled: job_enabled_init,
+        pool: job_pool.clone(),
     };
     let defaults_store = StoredValue::new(defaults.clone());
     let job_id_for_state = job.id.clone();
@@ -65,6 +67,7 @@ pub(super) fn JobDetailLoaded(
         enabled: RwSignal::new(job_enabled_init),
         params: RwSignal::new(job_params.clone()),
         params_str: RwSignal::new(pretty_json(&job_params)),
+        pool: RwSignal::new(job_pool.clone()),
     };
     let form_job_name = form.job_name;
     let form_cron = form.cron;
@@ -72,6 +75,7 @@ pub(super) fn JobDetailLoaded(
     let form_enabled = form.enabled;
     let form_params = form.params;
     let form_params_str = form.params_str;
+    let form_pool = form.pool;
 
     // Sync textarea string -> form_params JSON value
     Effect::new(move || {
@@ -182,6 +186,16 @@ pub(super) fn JobDetailLoaded(
             snapshot_string(&snapshot, "timezone").unwrap_or_else(|| "UTC".to_string())
         } else {
             format_timezone(&job_timezone)
+        }
+    });
+
+    let display_pool = Memo::new(move |_| {
+        if is_editing.get() {
+            form_pool.get()
+        } else if let Some(snapshot) = selected_snapshot.get() {
+            effective_job_pool(snapshot_string(&snapshot, "pool").as_deref()).to_string()
+        } else {
+            job_pool.clone()
         }
     });
 
@@ -346,12 +360,14 @@ pub(super) fn JobDetailLoaded(
         form_timezone,
         form_params_str,
         form_enabled,
+        form_pool,
     };
 
     let info_card_props = JobInfoCardInput {
         display_script_name,
         display_cron,
         display_timezone,
+        display_pool,
         display_params,
         last_run,
         next_run,
