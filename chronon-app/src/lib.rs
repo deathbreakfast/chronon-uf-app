@@ -323,6 +323,7 @@ uf_app! {
     version: "0.1.0",
     routes: ChrononRoutes,
     route_path: "/chronon",
+    repository: "https://github.com/unified-field-dev/chronon-uf-app",
     permission_manifest: permissions::ChrononPermission,
 }
 
