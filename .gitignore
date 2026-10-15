@@ -2,5 +2,4 @@
 /target-*
 /chronon-uf-app-e2e/end2end/node_modules
 /chronon-uf-app-e2e/end2end/test-results
-/chronon-uf-app-e2e/site/pkg
-/chronon-uf-app-e2e/site/*.css
+/chronon-uf-app-e2e/site/
