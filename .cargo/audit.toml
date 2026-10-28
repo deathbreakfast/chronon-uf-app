@@ -1,4 +1,13 @@
 [advisories]
 # Transitive via broker SDKs; no fixed upgrade available upstream (matches the
 # same ignore already used in higgs/deny.toml elsewhere in the fleet).
-ignore = ["RUSTSEC-2023-0071"]
+# zip: transitive via orbital-datatable (orbital, branch=main); the fix needs
+# a zip 2.x -> 9.x bump in orbital's own Cargo.toml, tracked by orbital's
+# cargo-audit-deny task. Remove once orbital publishes that bump and
+# `cargo update -p zip` here picks it up.
+ignore = [
+    "RUSTSEC-2023-0071",
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+]
