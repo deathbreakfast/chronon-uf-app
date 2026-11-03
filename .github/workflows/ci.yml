@@ -109,18 +109,14 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         working-directory: chronon-uf-app-e2e/end2end
         run: npx playwright install-deps chromium
-      - name: cargo leptos build (server then frontend)
+      - name: Playwright (parallel lanes)
+        working-directory: chronon-uf-app-e2e/end2end
         env:
           CI: true
-        run: |
-          # Serialize SSR + WASM so the runner does not compile two Orbital graphs at once
-          # (parallel compile OOM/kill → exit 143).
-          cargo leptos build --project chronon-uf-app-e2e --server-only
-          cargo leptos build --project chronon-uf-app-e2e --frontend-only
-      - name: cargo leptos end-to-end
-        env:
-          CI: true
-        run: cargo leptos end-to-end --project chronon-uf-app-e2e
+          LANES: 4
+        # run-lanes.sh builds (server, then frontend) and exits non-zero on a
+        # failed build or any failed, missing or duplicated test.
+        run: ./run-lanes.sh --no-install
       - name: Upload Playwright artifacts on failure
         if: failure() || cancelled()
         uses: actions/upload-artifact@v6
@@ -129,6 +125,7 @@ jobs:
           path: |
             chronon-uf-app-e2e/end2end/playwright-report/
             chronon-uf-app-e2e/end2end/test-results/
+            chronon-uf-app-e2e/end2end/lanes-out/
           if-no-files-found: ignore
 
   docs:
