@@ -397,7 +397,7 @@ export async function waitForHydrated(page: Page, timeoutMs = 180_000) {
 
 /** Higgs / server-fn deny surfaces as an Orbital error MessageBar. */
 export async function expectMutationDenied(page: Page) {
-  await expect(page.locator(".orbital-message-bar--error").first()).toBeVisible({
+  await expect(page.locator(".orbital-message-bar--error")).toBeVisible({
     timeout: 60_000,
   });
 }

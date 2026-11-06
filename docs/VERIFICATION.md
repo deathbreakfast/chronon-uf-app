@@ -55,7 +55,7 @@ cargo test -p chronon-backend
 Host-aligned SSR surface (on CI when the UI graph compiles):
 
 ```bash
-cargo clippy -p chronon-app --features ssr --all-targets -- -D warnings -A clippy::pedantic -A clippy::nursery
+cargo clippy -p chronon-app --features ssr --all-targets -- -D warnings
 cargo test -p chronon-app --features ssr
 cargo check -p chronon-app --features ssr
 cargo check -p chronon-uf-app-e2e --features ssr

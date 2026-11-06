@@ -9,7 +9,7 @@ test.describe("pw-chronon-scripts", () => {
     await expect(page.getByTestId("chronon-scripts-data-table")).toBeVisible({
       timeout: 60_000,
     });
-    await expect(page.getByText(seeded.fixtures.script_name).first()).toBeVisible({
+    await expect(page.getByTestId("chronon-scripts-data-table").getByText(seeded.fixtures.script_name)).toBeVisible({
       timeout: 60_000,
     });
   });
