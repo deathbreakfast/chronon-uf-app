@@ -1,4 +1,8 @@
 [advisories]
-# Transitive via broker SDKs; no fixed upgrade available upstream (matches the
-# same ignore already used in higgs/deny.toml elsewhere in the fleet).
-ignore = ["RUSTSEC-2023-0071"]
+# RUSTSEC-2023-0071: transitive via broker SDKs; no fixed upgrade available
+# upstream (matches the same ignore already used in higgs/deny.toml elsewhere
+# in the fleet).
+# RUSTSEC-2026-0459: libsqlite3-sys 0.30.1 comes in through sqlx-sqlite 0.8.6
+# from uf-valence-backend-sqlite. The fix (libsqlite3-sys >=0.39) needs sqlx
+# 0.9 in the Valence SQL backends; drop this ignore once that lands.
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0459"]
