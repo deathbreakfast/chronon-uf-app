@@ -4,7 +4,6 @@ use leptos::prelude::*;
 use serde_json::Value;
 
 /// Reserved for the future per-job WS wiring (see `ChrononJobRunLiveSource`).
-#[allow(dead_code)]
 pub const CHRONON_JOB_RUN_WS_PREFIX: &str = "/ws/chronon-job";
 
 /// Reactive handle to a per-job run-update WebSocket subscription.

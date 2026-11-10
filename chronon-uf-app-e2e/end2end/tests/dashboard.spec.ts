@@ -7,7 +7,7 @@ test.describe("pw-chronon-dashboard", () => {
     await waitForHydrated(page);
     await expect(page.getByTestId("chronon-dashboard")).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId("chronon-stat-total-jobs")).toBeVisible();
-    await expect(page.getByText(seeded.fixtures.job_name).first()).toBeVisible({
+    await expect(page.locator("#chronon-dashboard-recent-runs").getByText(seeded.fixtures.job_name)).toBeVisible({
       timeout: 60_000,
     });
   });

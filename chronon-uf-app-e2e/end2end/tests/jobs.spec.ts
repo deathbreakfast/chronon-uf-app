@@ -7,7 +7,7 @@ test.describe("pw-chronon-jobs", () => {
     await waitForHydrated(page);
     await expect(page.getByTestId("chronon-jobs-page")).toBeVisible({ timeout: 60_000 });
     await expect(page.getByTestId("chronon-jobs-data-table")).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByText(seeded.fixtures.job_name).first()).toBeVisible({
+    await expect(page.getByTestId("chronon-jobs-data-table").getByText(seeded.fixtures.job_name)).toBeVisible({
       timeout: 60_000,
     });
     await page.goto(`/chronon/jobs/${encodeURIComponent(seeded.fixtures.job_id)}`, {
@@ -15,7 +15,7 @@ test.describe("pw-chronon-jobs", () => {
     });
     await waitForHydrated(page);
     await expect(page.getByTestId("chronon-job-detail")).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByText(seeded.fixtures.job_name).first()).toBeVisible();
+    await expect(page.getByTestId("chronon-job-detail").getByText(seeded.fixtures.job_name)).toBeVisible();
   });
 
   test("pw-chronon-jobs-sad-unknown-job", async ({ page }) => {
