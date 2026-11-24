@@ -74,36 +74,27 @@ fn build_update_payload(form: &JobDetailFormState) -> UpdateJobRequest {
     })
 }
 
-pub(super) fn parse_run_now_params_input(raw: &str) -> Result<serde_json::Value, String> {
-    let trimmed = raw.trim();
-    let parsed = if trimmed.is_empty() {
-        serde_json::json!({})
-    } else {
-        serde_json::from_str::<serde_json::Value>(trimmed)
-            .map_err(|_| "Parameters must be valid JSON.".to_string())?
-    };
-    if !parsed.is_object() {
-        return Err("Parameters must be a JSON object (for example, {}).".to_string());
+/// Opens the Run now dialog. Every job gets the dialog, with or without parameters, so the
+/// person sees what will run before it runs.
+pub(super) fn open_run_now(open: RwSignal<bool>, loading: RwSignal<bool>) {
+    if !loading.get_untracked() {
+        open.set(true);
     }
-    Ok(parsed)
 }
 
-pub(super) fn run_job_now_with_optional_params(
+/// Queues a run with the dialog's values, then hands the new run id to `on_started`.
+pub(super) fn submit_run_now(
     job_id: String,
-    params: Option<serde_json::Value>,
-    run_now_loading: RwSignal<bool>,
-    run_now_error: RwSignal<Option<String>>,
-    on_success: Option<Callback<()>>,
+    params: serde_json::Value,
+    loading: RwSignal<bool>,
+    error: RwSignal<Option<String>>,
+    on_started: Callback<String>,
 ) {
-    let loading = run_now_loading;
-    let error = run_now_error;
     spawn_local_scoped(async move {
-        match run_job_now(job_id, params).await {
-            Ok(_run_id) => {
-                if let Some(cb) = on_success {
-                    cb.run(());
-                }
+        match run_job_now(job_id, Some(params)).await {
+            Ok(run_id) => {
                 loading.set(false);
+                on_started.run(run_id);
             }
             Err(e) => {
                 error.set(Some(e.to_string()));
@@ -181,7 +172,7 @@ pub(super) fn make_cancel_callback(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_update_payload_from_values, parse_run_now_params_input, UpdateFormValues};
+    use super::{build_update_payload_from_values, UpdateFormValues};
 
     #[test]
     fn build_update_payload_normalizes_empty_timezone() {
@@ -200,17 +191,5 @@ mod tests {
         assert_eq!(payload.params, serde_json::json!({}));
         assert!(payload.enabled);
         assert_eq!(payload.pool.as_deref(), Some("chronon-mve-a"));
-    }
-
-    #[test]
-    fn parse_run_now_params_accepts_empty_input_as_object() {
-        let parsed = parse_run_now_params_input("   ").expect("empty input should normalize");
-        assert_eq!(parsed, serde_json::json!({}));
-    }
-
-    #[test]
-    fn parse_run_now_params_rejects_non_object_json() {
-        let err = parse_run_now_params_input("[]").expect_err("array payload should fail");
-        assert!(err.contains("JSON object"));
     }
 }

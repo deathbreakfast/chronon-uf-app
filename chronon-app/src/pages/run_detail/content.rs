@@ -1,147 +1,134 @@
 use leptos::prelude::*;
-use leptos_router::hooks::use_navigate;
-use leptos_router::NavigateOptions;
-use orbital::components::{Caption1, SpacingSize, Title3};
-use orbital::primitives::{Button, ButtonAppearance, ButtonSize, Flex, FlexAlign};
+use orbital::components::{
+    Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, SpacingSize, Title3,
+};
+use orbital::primitives::{Button, ButtonAppearance, Flex, FlexAlign, FlexJustify, FlexWrap, Link};
 
 use crate::components::RunStatusBadge;
-use crate::server::Run;
+use crate::pages::job_detail::{RunNowDialog, RunNowDialogInput, RunStarted, RunStartedNotice};
+use crate::server::{RunDetail, RunStatus};
 
-use super::{RunInfoGrid, RunLogsDisplay};
+use super::{RunAttemptsCard, RunInfoGrid, RunLogsDisplay};
 
 /// Loaded run detail body — values derived from `run_res` so refetch updates in place.
 #[allow(clippy::too_many_lines)]
 #[component]
 pub fn RunDetailContent(
-    /// Resource that loads the run data.
-    run_res: Resource<Result<Option<Run>, ServerFnError>>,
+    /// Resource that loads the run detail.
+    run_res: Resource<Result<Option<RunDetail>, ServerFnError>>,
 ) -> impl IntoView {
-    let navigate = use_navigate();
-    let nav_store = StoredValue::new(navigate);
+    let detail = Memo::new(move |_| run_res.get().and_then(|r| r.ok().flatten()));
+    // First value for the parts that never change for this page (ids, names).
+    let first = detail.get_untracked();
+    let job_id = first
+        .as_ref()
+        .map(|d| d.run.job_id.clone())
+        .unwrap_or_default();
+    let job_name = first
+        .as_ref()
+        .map(|d| d.run.job_name.clone())
+        .unwrap_or_default();
 
-    let run_id_display = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .map(|r| r.id)
-            .unwrap_or_default()
+    let title = Memo::new(move |_| detail.get().map(|d| d.title).unwrap_or_default());
+    let status = Memo::new(move |_| detail.get().map(|d| d.run.status));
+    let can_run = Memo::new(move |_| detail.get().is_some_and(|d| d.can_run));
+    let root_run_id =
+        Signal::derive(move || detail.get().map(|d| d.root_run_id).unwrap_or_default());
+    let current_run_id = Signal::derive(move || detail.get().map(|d| d.run.id).unwrap_or_default());
+    let retry_caption =
+        Signal::derive(move || detail.get().map(|d| d.retry_caption).unwrap_or_default());
+    // Refresh the attempts list when this attempt's status changes (a retry may have started).
+    let attempts_refresh = Signal::derive(move || {
+        status.get().map_or(0, |s| match s {
+            RunStatus::Pending => 1,
+            RunStatus::Running => 2,
+            RunStatus::Completed => 3,
+            RunStatus::Failed => 4,
+            RunStatus::Cancelled => 5,
+        })
     });
-    let job_id = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .map(|r| r.job_id)
-            .unwrap_or_default()
+
+    // Run again: the Run now dialog, prefilled with this run's values.
+    let dialog_open = RwSignal::new(false);
+    let run_loading = RwSignal::new(false);
+    let run_started = RwSignal::new(None::<RunStarted>);
+    let dialog = (!job_id.is_empty()).then(|| {
+        view! {
+            <RunNowDialog
+                props=RunNowDialogInput {
+                    open: dialog_open,
+                    job_id: job_id.clone(),
+                    job_name: job_name.clone(),
+                    initial_params: Signal::derive(move || detail.get().map(|d| d.params)),
+                    loading: run_loading,
+                    on_started: Callback::new(move |started| run_started.set(Some(started))),
+                }
+            />
+        }
     });
-    let job_name = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .map(|r| r.job_name)
-            .unwrap_or_default()
-    });
-    let status = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .map(|r| r.status)
-    });
-    let started = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .map(|r| r.started_at)
-            .unwrap_or_default()
-    });
-    let finished = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .and_then(|r| r.finished_at)
-            .unwrap_or_else(|| "\u{2014}".to_string())
-    });
-    let duration = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .and_then(|r| r.duration_ms.map(|d| format!("{d}ms")))
-            .unwrap_or_else(|| "\u{2014}".to_string())
-    });
-    let logs = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .and_then(|r| r.logs)
-    });
-    let stderr = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .and_then(|r| r.stderr)
-    });
-    let error_message = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .and_then(|r| r.error_message)
-    });
-    let parent_run_id = Memo::new(move |_| {
-        run_res
-            .get()
-            .and_then(|r| r.ok().flatten())
-            .and_then(|r| r.parent_run_id)
-    });
+    let job_href = chronon_backend::chronon_job_path(&job_id);
 
     view! {
         <Flex vertical=true gap=SpacingSize::Size240.flex_gap()>
-            <div id="chronon-run-detail-header">
-            <Flex vertical=true gap=SpacingSize::Size80.flex_gap()>
-                <Flex align=FlexAlign::Center gap=SpacingSize::Size120.flex_gap()>
-                    <Title3>"Run " {move || run_id_display.get()}</Title3>
-                    {move || status.get().map(|s| view! { <RunStatusBadge status=s /> })}
-                </Flex>
-                <Flex align=FlexAlign::Center gap=SpacingSize::Size40.flex_gap()>
-                    <Caption1>"Job:"</Caption1>
-                    <div id="chronon-run-detail-job-link" data-testid="run-job-link">
-                        <Button
-                            appearance=ButtonAppearance::Transparent
-                            size=ButtonSize::Small
-                            on_click=Callback::new({
-                                let nav = nav_store.get_value();
-                                move |_| {
-                                    let id = job_id.get();
-                                    if !id.is_empty() {
-                                        nav(&chronon_backend::chronon_job_path(&id), NavigateOptions::default());
-                                    }
-                                }
-                            })
-                        >
-                            {move || job_name.get()}
-                        </Button>
-                    </div>
-                </Flex>
-            </Flex>
+            <div id="chronon-run-detail-breadcrumb" data-testid="chronon-run-breadcrumb">
+                <Breadcrumb>
+                    <BreadcrumbItem>
+                        <Link href="/chronon/jobs">"Jobs"</Link>
+                    </BreadcrumbItem>
+                    <BreadcrumbDivider />
+                    <BreadcrumbItem>
+                        <Link href=job_href>{job_name}</Link>
+                    </BreadcrumbItem>
+                    <BreadcrumbDivider />
+                    <BreadcrumbItem>
+                        <BreadcrumbButton current=true>{move || title.get()}</BreadcrumbButton>
+                    </BreadcrumbItem>
+                </Breadcrumb>
             </div>
+
+            <RunStartedNotice notice=run_started />
+
+            <div id="chronon-run-detail-header">
+                <Flex justify=FlexJustify::SpaceBetween align=FlexAlign::Center wrap=FlexWrap::Wrap>
+                    <Flex align=FlexAlign::Center gap=SpacingSize::Size120.flex_gap()>
+                        <div data-testid="chronon-run-title"><Title3>{move || title.get()}</Title3></div>
+                        {move || status.get().map(|s| view! { <RunStatusBadge status=s /> })}
+                    </Flex>
+                    <Show when=move || can_run.get() fallback=|| ()>
+                        <div data-testid="run-again-button">
+                            <Button
+                                appearance=ButtonAppearance::Secondary
+                                disabled=Signal::derive(move || run_loading.get())
+                                on_click=Callback::new(move |_| dialog_open.set(true))
+                            >
+                                "Run again"
+                            </Button>
+                        </div>
+                    </Show>
+                </Flex>
+            </div>
+            {dialog}
 
             <div id="chronon-run-detail-timing">
-            {move || view! {
-                <RunInfoGrid
-                    started=started.get()
-                    finished=finished.get()
-                    duration=duration.get()
-                    parent_run_id=parent_run_id.get()
-                />
-            }}
+                {move || detail.get().map(|d| view! { <RunInfoGrid detail=d /> })}
             </div>
 
+            <RunAttemptsCard
+                root_run_id=root_run_id
+                current_run_id=current_run_id
+                refresh=attempts_refresh
+                caption=retry_caption
+            />
+
             <div id="chronon-run-detail-output">
-            {move || view! {
-                <RunLogsDisplay
-                    logs=logs.get()
-                    stderr=stderr.get()
-                    error_message=error_message.get()
-                />
-            }}
+                {move || detail.get().map(|d| view! {
+                    <RunLogsDisplay
+                        logs=d.run.logs
+                        stderr=d.run.stderr
+                        error_message=d.run.error_message
+                        running=matches!(d.run.status, RunStatus::Running | RunStatus::Pending)
+                    />
+                })}
             </div>
         </Flex>
     }

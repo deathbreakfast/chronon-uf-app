@@ -1,5 +1,6 @@
 mod columns;
 mod fetcher;
+mod filters;
 mod mapper;
 
 use leptos::prelude::*;
@@ -10,13 +11,14 @@ use orbital::components::{
 };
 use orbital::primitives::{
     DataTable, DataTableEmptyView, DataTableEvents, DataTableFeatures, DataTableHeaderChromeConfig,
-    DataTableNoResultsView, DataTableSource, DataTableToolbarConfig, PagingMode,
+    DataTableLocale, DataTableNoResultsView, DataTableSource, DataTableToolbarConfig, PagingMode,
 };
 use turf::inline_style_sheet_values;
 
 use crate::components::chronon_card_content;
 use columns::runs_table_columns;
 use fetcher::{build_runs_fetcher, RUNS_TABLE_PAGE_SIZE};
+pub use filters::{RunsTableFilterBar, RunsTableFilterState};
 
 /// Scope for the shared runs `DataTable`.
 #[derive(Clone)]
@@ -70,8 +72,13 @@ pub fn RunsDataTable(
     /// External refresh nonce — bumps table fetch without remounting.
     #[prop(optional)]
     refresh_signal: Option<Signal<u32>>,
+    /// Result/time/job filters. When set, the filter bar shows above the table and filter
+    /// changes refetch the table in place.
+    #[prop(optional_no_strip)]
+    filters: Option<RunsTableFilterState>,
 ) -> impl IntoView {
     let chrome = chrome.unwrap_or_default();
+    let show_job_filter = matches!(scope, RunsTableScope::All);
     let navigate = use_navigate();
 
     let on_row_click = Callback::new(move |(id,): (String,)| {
@@ -82,7 +89,7 @@ pub fn RunsDataTable(
     });
 
     let data_source = DataTableSource::Server {
-        fetcher: build_runs_fetcher(scope),
+        fetcher: build_runs_fetcher(scope, filters),
         page_size,
     };
 
@@ -103,9 +110,27 @@ pub fn RunsDataTable(
     } else {
         PagingMode::Paged
     };
-    let table_refresh = refresh_signal.unwrap_or_else(|| Signal::derive(|| 0u32));
+    let external_refresh = refresh_signal.unwrap_or_else(|| Signal::derive(|| 0u32));
+    // Filter changes bump the table's refresh signal: same table, new rows.
+    let filter_bump = RwSignal::new(0u32);
+    if let Some(filters) = filters {
+        Effect::new(move |prev: Option<()>| {
+            filters.result.track();
+            filters.time.track();
+            filters.job.track();
+            if prev.is_some() {
+                filter_bump.update(|n| *n = n.wrapping_add(1));
+            }
+        });
+    }
+    let table_refresh =
+        Signal::derive(move || external_refresh.get().wrapping_add(filter_bump.get()));
+    let filter_bar = filters.map(|filters| {
+        view! { <RunsTableFilterBar filters=filters show_job=show_job_filter /> }
+    });
 
     let table = view! {
+        {filter_bar}
         <RunsFilledDataTable
             data_source=data_source
             paging=paging
@@ -141,6 +166,13 @@ pub fn RunsDataTable(
     }
 }
 
+fn runs_table_locale() -> DataTableLocale {
+    DataTableLocale {
+        quick_search_placeholder: "Search by job or run id".to_string(),
+        ..Default::default()
+    }
+}
+
 /// Inner DataTable body shared by flex-fill and max-height layouts.
 #[component]
 fn RunsFilledDataTable(
@@ -162,7 +194,7 @@ fn RunsFilledDataTable(
     };
     let toolbar = DataTableToolbarConfig {
         quick_search: true,
-        filter_panel: true,
+        filter_panel: false,
         column_picker: false,
         pivot: false,
         export_menu: false,
@@ -187,6 +219,7 @@ fn RunsFilledDataTable(
                     columns=columns
                     sortable=false
                     toolbar_config=toolbar
+                    locale=runs_table_locale()
                     header_chrome=header_chrome
                     events=events
                     refresh_signal=table_refresh
@@ -218,6 +251,7 @@ fn RunsFilledDataTable(
                     columns=columns
                     sortable=false
                     toolbar_config=toolbar
+                    locale=runs_table_locale()
                     header_chrome=header_chrome
                     events=events
                     refresh_signal=table_refresh

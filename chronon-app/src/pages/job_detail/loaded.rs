@@ -3,12 +3,13 @@
 use leptos::prelude::*;
 
 use super::actions::{
-    make_cancel_callback, make_edit_callback, make_save_callback, parse_run_now_params_input,
-    restore_form_state, run_job_now_with_optional_params, JobDetailDefaults, JobDetailFormState,
+    make_cancel_callback, make_edit_callback, make_save_callback, open_run_now, restore_form_state,
+    JobDetailDefaults, JobDetailFormState,
 };
 use super::components::{
-    JobDetailHeader, JobDetailHeaderInput, JobEditForm, JobEditFormInput, JobInfoCard,
-    JobInfoCardInput, JobRecentRuns, RunNowDialog, RunNowDialogInput,
+    FailingBanner, JobDetailHeader, JobDetailHeaderInput, JobEditForm, JobEditFormInput,
+    JobInfoCard, JobInfoCardInput, JobRecentRuns, RunNowDialog, RunNowDialogInput, RunStarted,
+    RunStartedNotice,
 };
 use super::display::{
     display_timezone as format_timezone, normalized_params, pretty_json, snapshot_params,
@@ -199,7 +200,7 @@ pub(super) fn JobDetailLoaded(
         }
     });
 
-    let job_params_for_display = job_params.clone();
+    let job_params_for_display = job_params;
     let display_params = Memo::new(move |_| {
         if is_editing.get() {
             form_params.get()
@@ -246,22 +247,9 @@ pub(super) fn JobDetailLoaded(
     let run_now_loading = RwSignal::new(false);
     let run_now_error = RwSignal::new(None::<String>);
     let run_now_dialog_open = RwSignal::new(false);
-    let run_now_params_str = RwSignal::new(pretty_json(&job_params));
-
-    let script_name_for_lookup = display_script_name.get_untracked();
-    let script_has_params = Memo::new(move |_| {
-        scripts_res
-            .get()
-            .and_then(Result::ok)
-            .and_then(|scripts| {
-                scripts
-                    .into_iter()
-                    .find(|script| script.name == script_name_for_lookup)
-            })
-            // Prefer prompting when metadata is unavailable so required
-            // params are never silently omitted.
-            .is_none_or(|script| !script.params.is_empty())
-    });
+    let run_started = RwSignal::new(None::<RunStarted>);
+    // The Run now dialog loads the script's parameters itself.
+    let _ = scripts_res;
 
     let save_loading = RwSignal::new(false);
     let save_error = RwSignal::new(None::<String>);
@@ -271,52 +259,9 @@ pub(super) fn JobDetailLoaded(
     });
 
     // ── Action callbacks ────────────────────────
-    let job_defaults_for_dialog = job_params;
-    let run_job_id_for_click = job_id_for_run.clone();
     let on_run_now = Callback::new(move |_: leptos::ev::MouseEvent| {
-        if run_now_loading.get() {
-            return;
-        }
         run_now_error.set(None);
-        if script_has_params.get() {
-            run_now_params_str.set(pretty_json(&job_defaults_for_dialog));
-            run_now_dialog_open.set(true);
-            return;
-        }
-        run_now_loading.set(true);
-        run_job_now_with_optional_params(
-            run_job_id_for_click.clone(),
-            None,
-            run_now_loading,
-            run_now_error,
-            None,
-        );
-    });
-    let run_job_id_for_submit = job_id_for_run;
-    let on_run_now_submit = Callback::new(move |()| {
-        if run_now_loading.get() {
-            return;
-        }
-        let params = match parse_run_now_params_input(&run_now_params_str.get()) {
-            Ok(params) => params,
-            Err(message) => {
-                run_now_error.set(Some(message));
-                return;
-            }
-        };
-        run_now_error.set(None);
-        run_now_loading.set(true);
-        run_job_now_with_optional_params(
-            run_job_id_for_submit.clone(),
-            Some(params),
-            run_now_loading,
-            run_now_error,
-            Some(Callback::new(move |()| run_now_dialog_open.set(false))),
-        );
-    });
-    let on_run_now_cancel = Callback::new(move |()| {
-        run_now_dialog_open.set(false);
-        run_now_error.set(None);
+        open_run_now(run_now_dialog_open, run_now_loading);
     });
     let on_edit = make_edit_callback(form.clone(), defaults.clone(), save_error, is_editing);
     let job_refetch = Callback::new(move |()| job_res.refetch());
@@ -378,14 +323,16 @@ pub(super) fn JobDetailLoaded(
 
     view! {
         <JobDetailHeader props=header_props />
+        <RunStartedNotice notice=run_started />
+        <FailingBanner job_id=job_id_for_runs.clone() refresh_signal=runs_refresh_signal />
         <RunNowDialog
             props=RunNowDialogInput {
                 open: run_now_dialog_open,
-                params_str: run_now_params_str,
+                job_id: job_id_for_run,
+                job_name: job.name,
+                initial_params: Signal::derive(|| None),
                 loading: run_now_loading,
-                error: run_now_error,
-                on_submit: on_run_now_submit,
-                on_cancel: on_run_now_cancel,
+                on_started: Callback::new(move |started| run_started.set(Some(started))),
             }
         />
 

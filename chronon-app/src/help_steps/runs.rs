@@ -37,7 +37,7 @@ pub fn ChrononRunsIntroHelp() -> impl IntoView {
 pub fn ChrononRunsSearchHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-runs-search",
-        "Search and filter across all Jobs. Narrow by status when you are hunting failures.",
+        "Search by Job or run id. Pick Failed and a time range when you are hunting failures.",
         None,
         &[],
     )
@@ -47,7 +47,7 @@ pub fn ChrononRunsSearchHelp() -> impl IntoView {
 #[help_spotlight_step(
     route = "/chronon/runs",
     feature_highlight = "chronon-runs-table",
-    title = "Each attempt",
+    title = "Each Run",
     spotlight = "chronon-runs-data-table",
     position = "top",
     order = 30
@@ -56,13 +56,13 @@ pub fn ChrononRunsSearchHelp() -> impl IntoView {
 pub fn ChrononRunsTableHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-runs-table",
-        "Compare attempts before you open a row.",
+        "One row per Run. Retries are folded into the Run they retry.",
         None,
         &[
-            "Job: which schedule produced the attempt",
-            "Status: outcome badge",
-            "Started: when it began",
-            "Duration: how long it took",
+            "Job: which schedule produced the Run",
+            "Result: how the last attempt ended",
+            "Attempts: 4 of 4 means three retries",
+            "Started by: the schedule, or who used Run now",
         ],
     )
 }

@@ -18,18 +18,18 @@ use super::help_stack;
 pub fn ChrononRunHeaderHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-run-header",
-        "The title identifies the Run. The status badge is the headline outcome for this attempt.",
+        "The title says when this attempt ran. The badge is how it ended. Run again starts the Job with these values.",
         None,
         &[],
     )
 }
 
-/// Link to the parent Job.
+/// Breadcrumb back to the Job.
 #[help_spotlight_step(
     route = "/chronon/runs/:run_id",
     feature_highlight = "chronon-run-job-link",
     title = "Open the Job",
-    spotlight = "chronon-run-detail-job-link",
+    spotlight = "chronon-run-detail-breadcrumb",
     position = "bottom",
     order = 20
 )]
@@ -37,7 +37,7 @@ pub fn ChrononRunHeaderHelp() -> impl IntoView {
 pub fn ChrononRunJobLinkHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-run-job-link",
-        "Opens the schedule that produced this Run. Use it when you need to pause, edit, or trigger another attempt.",
+        "Go back to the Job that produced this Run, or to every Job.",
         None,
         &[],
     )
@@ -47,7 +47,7 @@ pub fn ChrononRunJobLinkHelp() -> impl IntoView {
 #[help_spotlight_step(
     route = "/chronon/runs/:run_id",
     feature_highlight = "chronon-run-timing",
-    title = "Timing",
+    title = "Facts",
     spotlight = "chronon-run-detail-timing",
     position = "top",
     order = 30
@@ -56,13 +56,12 @@ pub fn ChrononRunJobLinkHelp() -> impl IntoView {
 pub fn ChrononRunTimingHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-run-timing",
-        "Clock fields for this attempt.",
+        "What ran, who started it, and with which values.",
         None,
         &[
-            "Started: when the attempt began",
-            "Finished: when it ended (if finished)",
-            "Duration: how long it took",
-            "Parent Run: present when spawned from another run",
+            "Started by: the schedule, a retry, or the person who used Run now",
+            "Parameters: the values used, with the stored value where it differed",
+            "Run id: quote it when you report a problem",
         ],
     )
 }
@@ -83,9 +82,9 @@ pub fn ChrononRunOutputHelp() -> impl IntoView {
         "When something fails, start here. Empty means nothing was captured for this attempt.",
         None,
         &[
-            "Error banner: short failure reason when present",
-            "Stdout: text the Script printed normally",
-            "Stderr: text printed as errors",
+            "Error: why the Script stopped, when it did",
+            "Standard output: text the Script printed",
+            "Standard error: text printed as errors",
         ],
     )
 }

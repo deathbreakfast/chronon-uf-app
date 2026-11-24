@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, NaiveTime, Timelike, Utc};
 use chronon_core::{Job as CoreJob, Run as CoreRun, RunStatus as CoreRunStatus};
 
+use crate::runs::group_runs;
 use crate::types::{DashboardChartPoint, DashboardChartSeries, DashboardStats};
 
 fn count_u32(n: usize) -> u32 {
@@ -20,6 +21,8 @@ pub fn utc_start_of_day(now: DateTime<Utc>) -> DateTime<Utc> {
 }
 
 /// Aggregates dashboard KPIs from in-memory job + run lists.
+///
+/// A run and its retries count once, by the final attempt.
 #[must_use]
 pub fn dashboard_stats_from_jobs_and_runs(
     jobs: &[CoreJob],
@@ -30,9 +33,15 @@ pub fn dashboard_stats_from_jobs_and_runs(
     let active_jobs = count_u32(jobs.iter().filter(|j| j.enabled).count());
     let paused_jobs = count_u32(jobs.iter().filter(|j| !j.enabled).count());
 
-    let runs_today: Vec<&CoreRun> = runs
+    // A run and its retries count once, by the final attempt (G13).
+    let groups = group_runs(runs);
+    let runs_today: Vec<&CoreRun> = groups
         .iter()
-        .filter(|r| r.scheduled_for >= today_start)
+        .filter(|g| {
+            g.first()
+                .is_some_and(|root| root.scheduled_for >= today_start)
+        })
+        .filter_map(|g| g.last().copied())
         .collect();
 
     let total_runs_today = count_u32(runs_today.len());
@@ -106,6 +115,8 @@ pub fn align_run_bucket(ts: DateTime<Utc>, bucket: RunBucketGranularity) -> Date
 
 /// Builds successful/failed chart series from a bounded run list.
 ///
+/// A run and its retries count once, by the final attempt, in the first attempt's bucket.
+///
 /// Failed series includes Failed / Timeout / Canceled outcomes. Running and
 /// queued/claimed attempts are ignored.
 #[must_use]
@@ -120,9 +131,17 @@ pub fn run_stats_series_from_runs(
     let mut success_buckets: BTreeMap<DateTime<Utc>, u32> = BTreeMap::new();
     let mut failed_buckets: BTreeMap<DateTime<Utc>, u32> = BTreeMap::new();
 
-    for run in runs.iter().filter(|r| r.scheduled_for >= since) {
-        let bucket_ts = align_run_bucket(run.scheduled_for, bucket);
-        match run.status {
+    // Bucket each run (retries folded in) by its first attempt, counted by its final one.
+    let groups = group_runs(runs);
+    for group in &groups {
+        let (Some(root), Some(last)) = (group.first(), group.last()) else {
+            continue;
+        };
+        if root.scheduled_for < since {
+            continue;
+        }
+        let bucket_ts = align_run_bucket(root.scheduled_for, bucket);
+        match last.status {
             CoreRunStatus::Success => {
                 *success_buckets.entry(bucket_ts).or_insert(0) += 1;
             }

@@ -3,15 +3,28 @@ use orbital::components::{Caption1, Card, CardContent, ContentContainer, Spacing
 use orbital::primitives::Flex;
 
 use crate::components::{
-    chronon_card_content, chronon_table_page_layout, RunsDataTable, RunsTableChrome, RunsTableScope,
+    chronon_card_content, chronon_table_page_layout, RunsDataTable, RunsTableChrome,
+    RunsTableFilterState, RunsTableScope,
 };
 use crate::live::use_chronon_poll_tick;
+use crate::server::get_runs_caption;
 
-/// Runs list page — paginated execution history with search and filters.
+/// Runs list page — every run with its retries folded in, filterable by result, time and job.
 #[component]
 pub fn ChrononRunsPage() -> impl IntoView {
     let poll_tick = use_chronon_poll_tick();
     let refresh_signal = Signal::derive(move || poll_tick.get());
+
+    let filters = RunsTableFilterState::from_url("24h");
+    filters.sync_to_url();
+
+    // The caption follows the time and job filters only; it never touches the table.
+    let caption = LocalResource::new(move || {
+        let time = filters.time.get();
+        let job = filters.job_id();
+        let _ = poll_tick.get();
+        async move { get_runs_caption(time, job).await.ok() }
+    });
 
     let (card_content_style, card_content_class) = chronon_card_content();
     let (page_style, page_classes) = chronon_table_page_layout();
@@ -25,9 +38,21 @@ pub fn ChrononRunsPage() -> impl IntoView {
             <Flex vertical=true gap=SpacingSize::Size240.flex_gap() class=page_classes.body>
                 <Flex vertical=true gap=SpacingSize::Size80.flex_gap()>
                     <Title3>"Runs"</Title3>
-                    <Caption1>
-                        "Execution history for all scheduled and manual runs."
-                    </Caption1>
+                    <div data-testid="chronon-runs-caption">
+                        <Caption1>
+                            <Suspense fallback=|| "Every scheduled and manual run, with retries folded into the run they retry.">
+                            {move || {
+                                caption
+                                    .get()
+                                    .flatten()
+                                    .unwrap_or_else(|| {
+                                        "Every scheduled and manual run, with retries folded into the run they retry."
+                                            .to_string()
+                                    })
+                            }}
+                            </Suspense>
+                        </Caption1>
+                    </div>
                 </Flex>
                 <Card class=page_classes.card>
                     <CardContent class=fill_card_content>
@@ -41,6 +66,7 @@ pub fn ChrononRunsPage() -> impl IntoView {
                                     infinite_scroll: false,
                                 }
                                 refresh_signal=refresh_signal
+                                filters=Some(filters)
                             />
                         </div>
                     </CardContent>

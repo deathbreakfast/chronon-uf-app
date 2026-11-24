@@ -12,6 +12,16 @@ test.describe("pw-chronon-dashboard", () => {
     });
   });
 
+  test("pw-chronon-dashboard-happy-retries-count-once", async ({ page }) => {
+    await seedAuth(page, "admin");
+    await page.goto("/chronon", { waitUntil: "domcontentloaded" });
+    await waitForHydrated(page);
+    // The seeded purge failed on its first try and three retries: one failed run, not four.
+    await expect(page.getByTestId("chronon-stat-failed")).toContainText(/(^|\D)1(\D|$)/, {
+      timeout: 60_000,
+    });
+  });
+
   test("pw-chronon-dashboard-sad-empty-trend-not-crash", async ({ page }) => {
     await seedAuth(page, "admin");
     await page.goto("/chronon", { waitUntil: "domcontentloaded" });

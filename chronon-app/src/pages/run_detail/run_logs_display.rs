@@ -1,15 +1,14 @@
 use leptos::prelude::*;
-use orbital::components::{Body1, Card, CardContent, SpacingSize, Subtitle2, Text, TextTag};
-use orbital::primitives::{Flex, MessageBar, MessageBarBody, MessageBarIntent};
+use orbital::components::{
+    Body1, Caption1, Card, CardContent, CardHeader, SpacingSize, Subtitle2, Text, TextTag,
+};
+use orbital::primitives::{Flex, MessageBar, MessageBarBody, MessageBarIntent, MessageBarTitle};
 
-/// Log and error output section for a run.
-///
-/// Renders up to three sections: an error banner (from `error_json`),
-/// stdout output, and stderr output. Shows "No output captured." when
-/// all three are absent.
+/// Output section for a run: who may read it, the error the script stopped with, then
+/// standard output and standard error. A running run shows its output so far.
 #[component]
 pub fn RunLogsDisplay(
-    /// Log output to display.
+    /// Captured standard output.
     #[prop(optional_no_strip)]
     logs: Option<String>,
     /// Captured standard error output.
@@ -18,14 +17,11 @@ pub fn RunLogsDisplay(
     /// Optional error message.
     #[prop(optional_no_strip)]
     error_message: Option<String>,
+    /// True while the run is still going.
+    #[prop(optional)]
+    running: bool,
 ) -> impl IntoView {
     let has_any = error_message.is_some() || logs.is_some() || stderr.is_some();
-    let has_error = error_message.is_some();
-    let has_logs = logs.is_some();
-    let has_stderr = stderr.is_some();
-    let error_msg = StoredValue::new(error_message.unwrap_or_default());
-    let logs_text = StoredValue::new(logs.unwrap_or_default());
-    let stderr_text = StoredValue::new(stderr.unwrap_or_default());
 
     let (style_sheet, class_names) = turf::inline_style_sheet_values! {
         .LogsPre {
@@ -41,46 +37,50 @@ pub fn RunLogsDisplay(
             word-break: break-all;
         }
     };
+    let pre_class = class_names.logs_pre;
 
     view! {
         <style>{style_sheet}</style>
         <Flex vertical=true gap=SpacingSize::Size160.flex_gap()>
-            <Subtitle2>"Output"</Subtitle2>
+            <Subtitle2>{if running { "Output so far" } else { "Output" }}</Subtitle2>
+            <Caption1>
+                "Script output can hold personal data. Only people who can view this job can read it."
+            </Caption1>
 
-            <Show when=move || has_error>
+            {error_message.map(|message| view! {
                 <MessageBar intent=MessageBarIntent::Error>
                     <MessageBarBody>
-                        <Body1>{error_msg.get_value()}</Body1>
+                        <MessageBarTitle>"The script stopped with an error"</MessageBarTitle>
+                        {message}
                     </MessageBarBody>
                 </MessageBar>
-            </Show>
+            })}
 
-            <Show when=move || has_logs>
-                <Card>
+            {logs.map(|text| view! {
+                <Card attr:data-testid="chronon-run-stdout">
+                    <CardHeader><Subtitle2>"Standard output"</Subtitle2></CardHeader>
                     <CardContent>
-                        <Text tag=TextTag::Pre class=class_names.logs_pre>{logs_text.get_value()}</Text>
+                        <Text tag=TextTag::Pre class=pre_class>{text}</Text>
                     </CardContent>
                 </Card>
-            </Show>
+            })}
 
-            <Show when=move || has_stderr>
-                <Flex vertical=true gap=SpacingSize::Size80.flex_gap()>
-                    <Subtitle2>"Stderr"</Subtitle2>
-                    <Card>
-                        <CardContent>
-                            <Text tag=TextTag::Pre class=class_names.logs_pre>{stderr_text.get_value()}</Text>
-                        </CardContent>
-                    </Card>
-                </Flex>
-            </Show>
-
-            <Show when=move || !has_any>
-                <Card>
+            {stderr.map(|text| view! {
+                <Card attr:data-testid="chronon-run-stderr">
+                    <CardHeader><Subtitle2>"Standard error"</Subtitle2></CardHeader>
                     <CardContent>
-                        <Body1>"No output captured."</Body1>
+                        <Text tag=TextTag::Pre class=pre_class>{text}</Text>
                     </CardContent>
                 </Card>
-            </Show>
+            })}
+
+            {(!has_any).then(|| view! {
+                <Card>
+                    <CardContent>
+                        <Body1>{if running { "No output yet." } else { "No output captured." }}</Body1>
+                    </CardContent>
+                </Card>
+            })}
         </Flex>
     }
 }

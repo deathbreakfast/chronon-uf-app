@@ -7,6 +7,14 @@ export type SeedFixtures = {
   job_id: string;
   job_name: string;
   run_id: string;
+  /** Job whose newest run failed and retried three times (4 attempts). */
+  purge_job_id: string;
+  purge_job_name: string;
+  /** First attempt of the failed purge run. */
+  purge_run_id: string;
+  /** Job with one integer parameter (`older_than_days`, stored 30) for Run now. */
+  params_job_id: string;
+  params_job_name: string;
 };
 
 /** All Chronon Help inventory keys — seed as seen so non-tour specs stay quiet. */
@@ -207,7 +215,7 @@ const CHRONON_HELP_STEPS_SEEN = [
   {
     route: "/chronon/runs/:run_id",
     feature_highlight: "chronon-run-job-link",
-    spotlight: "chronon-run-detail-job-link",
+    spotlight: "chronon-run-detail-breadcrumb",
     replay: false,
   },
   {
