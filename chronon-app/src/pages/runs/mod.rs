@@ -19,7 +19,7 @@ pub fn ChrononRunsPage() -> impl IntoView {
     filters.sync_to_url();
 
     // The caption follows the time and job filters only; it never touches the table.
-    let caption = LocalResource::new(move || {
+    let caption = crate::utils::client_fetch(move || {
         let time = filters.time.get();
         let job = filters.job_id();
         let _ = poll_tick.get();
@@ -40,17 +40,14 @@ pub fn ChrononRunsPage() -> impl IntoView {
                     <Title3>"Runs"</Title3>
                     <div data-testid="chronon-runs-caption">
                         <Caption1>
-                            <Suspense fallback=|| "Every scheduled and manual run, with retries folded into the run they retry.">
                             {move || {
                                 caption
                                     .get()
-                                    .flatten()
                                     .unwrap_or_else(|| {
                                         "Every scheduled and manual run, with retries folded into the run they retry."
                                             .to_string()
                                     })
                             }}
-                            </Suspense>
                         </Caption1>
                     </div>
                 </Flex>

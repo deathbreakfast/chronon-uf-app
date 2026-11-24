@@ -57,21 +57,25 @@ pub fn RunLogsDisplay(
             })}
 
             {logs.map(|text| view! {
-                <Card attr:data-testid="chronon-run-stdout">
+                <div data-testid="chronon-run-stdout">
+                <Card>
                     <CardHeader><Subtitle2>"Standard output"</Subtitle2></CardHeader>
                     <CardContent>
                         <Text tag=TextTag::Pre class=pre_class>{text}</Text>
                     </CardContent>
                 </Card>
+                </div>
             })}
 
             {stderr.map(|text| view! {
-                <Card attr:data-testid="chronon-run-stderr">
+                <div data-testid="chronon-run-stderr">
+                <Card>
                     <CardHeader><Subtitle2>"Standard error"</Subtitle2></CardHeader>
                     <CardContent>
                         <Text tag=TextTag::Pre class=pre_class>{text}</Text>
                     </CardContent>
                 </Card>
+                </div>
             })}
 
             {(!has_any).then(|| view! {

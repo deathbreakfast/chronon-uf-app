@@ -92,21 +92,21 @@ pub fn RunNowDialog(
     } = props;
     let error = RwSignal::new(None::<String>);
 
-    // The dialog owns its data: opening it loads the facts, nothing else on the page.
+    // The dialog owns its data: opening it loads the facts on the client, nothing else on
+    // the page.
     let facts_job_id = job_id.clone();
-    let facts = LocalResource::new(move || {
+    let facts = crate::utils::client_fetch(move || {
         let is_open = open.get();
         let id = facts_job_id.clone();
         async move {
-            if is_open {
+            Some(if is_open {
                 Some(get_run_now_facts(id).await.map_err(|e| e.to_string()))
             } else {
                 None
-            }
+            })
         }
     });
-    // Facts and fields live in signals filled by an Effect, so nothing outside the dialog's
-    // own Suspense reads the resource (Effects never run on the server).
+    // Fields are rebuilt from each load: the stored values, or the run's values for Run again.
     let fields = RwSignal::new(Vec::<ParamField>::new());
     let loaded = RwSignal::new(None::<RunNowFacts>);
     Effect::new(move |_| match facts.get() {
@@ -170,7 +170,6 @@ pub fn RunNowDialog(
                     <DialogTitle>{title}</DialogTitle>
                     <DialogContent>
                         <div data-testid="run-now-dialog">
-                            <Suspense fallback=|| view! { <Spinner /> }>
                             {move || match facts.get() {
                                 Some(Some(Ok(f))) => view! { <RunNowBody facts=f fields=fields /> }.into_any(),
                                 Some(Some(Err(e))) => view! {
@@ -178,7 +177,6 @@ pub fn RunNowDialog(
                                 }.into_any(),
                                 _ => view! { <Spinner /> }.into_any(),
                             }}
-                            </Suspense>
                             <Show when=move || error.get().is_some() fallback=|| ()>
                                 <MessageBar intent=MessageBarIntent::Error>
                                     {move || error.get().unwrap_or_default()}

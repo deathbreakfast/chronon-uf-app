@@ -60,7 +60,8 @@ pub fn RunInfoGrid(
 
     view! {
         <style>{style_sheet}</style>
-        <Card attr:data-testid="chronon-run-facts">
+        <div data-testid="chronon-run-facts">
+        <Card>
             <CardContent>
                 <Grid config=GridConfig::with_gaps(2, 16, 8)>
                     <GridItem><Caption2 class=class_names.label>"Job"</Caption2></GridItem>
@@ -95,5 +96,6 @@ pub fn RunInfoGrid(
                 </Grid>
             </CardContent>
         </Card>
+        </div>
     }
 }

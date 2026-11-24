@@ -113,11 +113,11 @@ pub fn RunsTableFilterBar(
 ) -> impl IntoView {
     let job_text = RwSignal::new(String::new());
     view! {
+        <div data-testid="chronon-runs-filters">
         <Flex
             gap=SpacingSize::Size120.flex_gap()
             align=FlexAlign::End
             wrap=FlexWrap::Wrap
-            attr:data-testid="chronon-runs-filters"
         >
             <div data-testid="chronon-runs-filter-result">
                 <Field label="Result">
@@ -141,6 +141,7 @@ pub fn RunsTableFilterBar(
             </div>
             {show_job.then(|| view! { <JobFilterCombobox filters=filters job_text=job_text /> })}
         </Flex>
+        </div>
     }
 }
 
@@ -148,7 +149,7 @@ pub fn RunsTableFilterBar(
 /// touches the table.
 #[component]
 fn JobFilterCombobox(filters: RunsTableFilterState, job_text: RwSignal<String>) -> impl IntoView {
-    let jobs = LocalResource::new(|| async move { get_jobs().await.unwrap_or_default() });
+    let jobs = crate::utils::client_fetch(|| async move { get_jobs().await.ok() });
     view! {
         <div data-testid="chronon-runs-filter-job">
             <Field label="Job">
@@ -160,7 +161,6 @@ fn JobFilterCombobox(filters: RunsTableFilterState, job_text: RwSignal<String>) 
                         ..Default::default()
                     }
                 >
-                    <Suspense fallback=|| ()>
                     {move || {
                         jobs.get()
                             .unwrap_or_default()
@@ -168,7 +168,6 @@ fn JobFilterCombobox(filters: RunsTableFilterState, job_text: RwSignal<String>) 
                             .map(|job| view! { <ComboboxOption text=job.name value=job.id /> })
                             .collect_view()
                     }}
-                    </Suspense>
                 </Combobox>
             </Field>
         </div>

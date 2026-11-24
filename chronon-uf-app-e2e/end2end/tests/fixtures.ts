@@ -256,6 +256,8 @@ export async function seedAuth(
   opts?: { help_tour?: boolean },
 ) {
   const helpTour = opts?.help_tour ?? false;
+  // Surface browser-side panics (hydration errors) in the Playwright log.
+  page.on("pageerror", (err) => console.log(`[pageerror] ${page.url()}: ${err.message}`));
   await page.addInitScript(
     ([enableTour, seenSteps]) => {
       try {

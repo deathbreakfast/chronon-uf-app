@@ -22,10 +22,10 @@ pub fn RunAttemptsCard(
     caption: Signal<String>,
 ) -> impl IntoView {
     // Keyed on the run it lists (and the live refresh) only.
-    let attempts = LocalResource::new(move || {
+    let attempts = crate::utils::client_fetch(move || {
         let id = root_run_id.get();
         let _ = refresh.get();
-        async move { get_run_attempts(id).await.unwrap_or_default() }
+        async move { get_run_attempts(id).await.ok() }
     });
     view! {
         <div id="chronon-run-detail-attempts" data-testid="chronon-run-attempts">
@@ -35,13 +35,11 @@ pub fn RunAttemptsCard(
             <CardContent>
                 <Flex vertical=true gap=SpacingSize::Size120.flex_gap()>
                     <Grid config=GridConfig::with_gaps(4, 16, 8)>
-                        <Suspense fallback=|| ()>
                         {move || {
                             attempts.get().unwrap_or_default().into_iter().map(|a| {
                                 view! { <AttemptRow attempt=a current=current_run_id.get_untracked() /> }
                             }).collect_view()
                         }}
-                        </Suspense>
                     </Grid>
                     <Caption1>{move || caption.get()}</Caption1>
                 </Flex>
@@ -60,13 +58,15 @@ fn AttemptRow(attempt: RunAttempt, current: String) -> impl IntoView {
         .map_or_else(|| "\u{2014}".to_string(), chronon_backend::duration_words);
     view! {
         <GridItem>
-            <Flex align=FlexAlign::Center gap=SpacingSize::Size40.flex_gap() attr:data-testid="chronon-run-attempt">
+            <div data-testid="chronon-run-attempt">
+            <Flex align=FlexAlign::Center gap=SpacingSize::Size40.flex_gap()>
                 {if this_one {
                     view! { <Body1>{attempt.label}</Body1><Body1Strong>"(this one)"</Body1Strong> }.into_any()
                 } else {
                     view! { <Link href=href>{attempt.label}</Link> }.into_any()
                 }}
             </Flex>
+            </div>
         </GridItem>
         <GridItem><Body1>{crate::utils::format_started_at(&attempt.started_at)}</Body1></GridItem>
         <GridItem><RunStatusBadge status=attempt.result /></GridItem>

@@ -27,7 +27,7 @@ pub fn JobRecentRuns(
         filters
     });
     let week_job_id = job_id.clone();
-    let week = LocalResource::new(move || {
+    let week = crate::utils::client_fetch(move || {
         let id = week_job_id.clone();
         let _ = refresh_signal.get();
         async move { get_job_week(id).await.ok() }
@@ -38,8 +38,8 @@ pub fn JobRecentRuns(
     );
 
     view! {
-        <div id="chronon-job-detail-recent-runs">
-        <Card attr:data-testid="chronon-recent-runs-card">
+        <div id="chronon-job-detail-recent-runs" data-testid="chronon-recent-runs-card">
+        <Card>
             <CardHeader>
                 <Flex justify=FlexJustify::SpaceBetween align=FlexAlign::Center>
                     <Subtitle2>"Runs"</Subtitle2>
@@ -51,26 +51,22 @@ pub fn JobRecentRuns(
             <CardSectionBorder />
             <CardContent>
                 <Flex vertical=true gap=SpacingSize::Size120.flex_gap()>
+                    <div data-testid="chronon-job-week">
                     <Flex
                         align=FlexAlign::Center
                         gap=SpacingSize::Size80.flex_gap()
                         wrap=FlexWrap::Wrap
-                        attr:data-testid="chronon-job-week"
                     >
                         <Caption1>"Last 7 days"</Caption1>
-                        <Suspense fallback=|| ()>
                         {move || {
                             week.get()
-                                .flatten()
                                 .map(|w| w.days.into_iter().map(|day| view! { <DayBadge day=day /> }).collect_view())
                         }}
-                        </Suspense>
                     </Flex>
+                    </div>
                     <div data-testid="chronon-job-runs-summary">
                         <Caption1>
-                            <Suspense fallback=|| ()>
-                                {move || week.get().flatten().map(|w| w.summary).unwrap_or_default()}
-                            </Suspense>
+                                {move || week.get().map(|w| w.summary).unwrap_or_default()}
                         </Caption1>
                     </div>
                     <RunsDataTable
@@ -119,16 +115,16 @@ pub fn FailingBanner(
     #[prop(optional)]
     refresh_signal: Option<Signal<u32>>,
 ) -> impl IntoView {
-    let week = LocalResource::new(move || {
+    let week = crate::utils::client_fetch(move || {
         let id = job_id.clone();
         if let Some(signal) = refresh_signal {
             let _ = signal.get();
         }
         async move { get_job_week(id).await.ok() }
     });
-    // Its own boundary: the banner loads after the page, never holding the page back.
-    let banner = move || {
-        week.get().flatten().and_then(|w| w.failing).map(|failing| {
+    // Loads on the client after the page, so it never holds the page back.
+    move || {
+        week.get().and_then(|w| w.failing).map(|failing| {
             let href = chronon_backend::chronon_run_path(&failing.run_id);
             view! {
                 <div data-testid="chronon-job-failing-banner">
@@ -144,6 +140,5 @@ pub fn FailingBanner(
                 </div>
             }
         })
-    };
-    view! { <Suspense fallback=|| ()>{banner}</Suspense> }
+    }
 }
