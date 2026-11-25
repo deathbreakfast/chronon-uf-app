@@ -79,4 +79,17 @@ test.describe("pw-chronon-runs", () => {
       timeout: 60_000,
     });
   });
+
+  test("pw-chronon-runs-happy-trend-chart-under-table", async ({ page }) => {
+    await seedAuth(page, "admin");
+    await page.goto("/chronon/runs", { waitUntil: "domcontentloaded" });
+    await waitForHydrated(page);
+    await expect(page.getByTestId("chronon-runs-data-table")).toBeVisible({ timeout: 60_000 });
+    const card = page.locator("#chronon-run-trend-card");
+    await card.scrollIntoViewIfNeeded();
+    await expect(card).toContainText("Run outcomes", { timeout: 60_000 });
+    await expect(page.getByTestId("chronon-run-trend-chart")).toBeVisible({ timeout: 60_000 });
+    await page.getByTestId("run-trend-range-24h").getByRole("button").click();
+    await expect(page.getByTestId("chronon-run-trend-chart")).toBeVisible();
+  });
 });

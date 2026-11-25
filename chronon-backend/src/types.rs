@@ -339,6 +339,71 @@ pub struct DashboardStats {
     pub failed_runs_today: u32,
     /// Number of runs currently executing.
     pub running_now: u32,
+    /// Jobs whose newest run failed (retries folded in).
+    #[serde(default)]
+    pub failing_jobs: u32,
+    /// Share of the last 24 hours' finished runs that worked, in tenths of a percent
+    /// (`966` is 96.6%). `None` when no run finished in that window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worked_24h_permille: Option<u32>,
+}
+
+/// Why a job is on the dashboard's Needs attention list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttentionKind {
+    /// The job's newest run failed on every attempt.
+    Failed,
+    /// The job is paused.
+    Paused,
+    /// The job should have run by now and didn't.
+    Missed,
+}
+
+/// One line of the dashboard's Needs attention list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttentionItem {
+    /// Why the job needs attention.
+    pub kind: AttentionKind,
+    /// Job id; Open the job links here.
+    pub job_id: String,
+    /// Job name.
+    pub job_name: String,
+    /// Bar title, such as `purge-expired-sessions failed at 03:00`.
+    pub title: String,
+    /// What happened and what happens next.
+    pub detail: String,
+    /// First attempt of the failed run, for See the run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+}
+
+/// The dashboard's Needs attention list and today's run count for its all-clear line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Attention {
+    /// Failed, paused and missed jobs, in that order.
+    pub items: Vec<AttentionItem>,
+    /// Runs started today (retries folded in).
+    pub runs_today: u32,
+}
+
+/// One upcoming run on the dashboard's Coming up card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComingUpRun {
+    /// When it runs (RFC 3339).
+    pub at: String,
+    /// `Today, 09:40`, `Tomorrow, 02:00` or `Wed, Nov 26, 03:00` (UTC).
+    pub when: String,
+    /// `in 4 min`, `in 14 h`, `in 3 days`.
+    pub in_words: String,
+    /// Job id.
+    pub job_id: String,
+    /// Job name.
+    pub job_name: String,
+    /// The job's schedule as a sentence.
+    pub schedule_text: String,
+    /// True when the job hasn't run yet.
+    pub first_run: bool,
 }
 
 /// Run preview row for dashboard recent activity.
@@ -358,7 +423,7 @@ pub struct RecentRun {
 }
 
 /// Immutable job revision view-model used by job detail history.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobRevision {
     /// Unique identifier for this revision record.
     pub revision_id: String,
@@ -370,6 +435,15 @@ pub struct JobRevision {
     pub changed_by_actor_json: serde_json::Value,
     /// Full JSON snapshot of the job's configuration at this revision.
     pub snapshot_json: serde_json::Value,
+    /// Who saved it, such as `ines` or `the platform`.
+    #[serde(default)]
+    pub saved_by: String,
+    /// One-line summary of the change, such as `Moved to the thumbs-gpu worker pool`.
+    #[serde(default)]
+    pub summary: String,
+    /// The revision's settings, one `key: value` line each, for the History diff.
+    #[serde(default)]
+    pub settings_text: String,
 }
 
 /// Payload used to update mutable job configuration fields.

@@ -74,7 +74,7 @@ pub(super) async fn scan_runs(
 
 /// Display names of the people in `runs`' actors, read as the session's actor.
 #[cfg(feature = "ssr")]
-async fn people_names(
+pub(super) async fn people_names(
     ctx: &higgs::Higgs,
     runs: &[chronon_coordinator::models::Run],
 ) -> Result<std::collections::HashMap<String, String>, ServerFnError> {

@@ -30,10 +30,11 @@ cargo test -p chronon-uf-app-e2e --features ssr --test boundary_contract
 | ID | Asserts |
 |----|---------|
 | `pw-chronon-auth-gate-*` | Anon gated; admin sees dashboard |
-| `pw-chronon-dashboard-*` | KPI / seeded job visible; empty trend does not crash |
+| `pw-chronon-dashboard-*` | Stat cards; failed purge and a paused job in Needs attention; Coming up in words; retries folded in Recent runs |
+| `pw-chronon-history-*` | Who saved each revision and what changed; pool-change diff; picking a revision doesn't reload |
 | `pw-chronon-jobs-*` | List→detail; unknown job; unverified create blocked; host pool provider rows in the create and edit pickers, edited pool persists |
 | `pw-chronon-run-now-*` | Admin run-now; non-admin denied / hidden |
-| `pw-chronon-runs-*` | List→detail; unknown run |
+| `pw-chronon-runs-*` | List→detail; unknown run; run outcomes chart under the table |
 | `pw-chronon-scripts-*` | Script catalog lists lab script |
 
 ## L5 host Playwright

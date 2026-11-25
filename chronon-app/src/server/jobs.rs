@@ -239,7 +239,10 @@ pub async fn get_job(
     Ok(Some(job_for_reader(with_last_run(job, &runs), held)))
 }
 
-/// Get all revisions for a job (by ID or name)
+/// Get all revisions for a job (by ID or name), newest first. Needs View on the job.
+///
+/// Each revision names who saved it, sums up what it changed, and carries its settings
+/// (parameters included) as `key: value` lines for the History diff.
 #[uf_product_macros::server]
 pub async fn get_job_revisions(
     /// Job ID or job name whose revisions should be listed.
@@ -266,18 +269,19 @@ pub async fn get_job_revisions(
 
     let job_revisions: Vec<JobRevision> = revisions
         .into_iter()
-        .map(|r| {
-            chronon_backend::redact_job_revision(JobRevision {
-                revision_id: r.revision_id,
-                revision_number: u32::try_from(r.revision_number).unwrap_or(0),
-                changed_at: r.changed_at.to_rfc3339(),
-                changed_by_actor_json: r.changed_by_actor_json,
-                snapshot_json: r.snapshot_json,
-            })
+        .map(|r| JobRevision {
+            revision_id: r.revision_id,
+            revision_number: u32::try_from(r.revision_number).unwrap_or(0),
+            changed_at: r.changed_at.to_rfc3339(),
+            changed_by_actor_json: r.changed_by_actor_json,
+            snapshot_json: r.snapshot_json,
+            saved_by: String::new(),
+            summary: String::new(),
+            settings_text: String::new(),
         })
         .collect();
 
-    Ok(job_revisions)
+    Ok(chronon_backend::describe_revisions(job_revisions))
 }
 
 /// Update a job's configuration (creates a new revision).

@@ -41,7 +41,9 @@ mod types;
 
 #[cfg(feature = "ssr")]
 pub use access::ChrononAdminGroup;
-pub use dashboard::{get_dashboard_stats, get_recent_runs, get_run_stats_series};
+pub use dashboard::{
+    get_attention, get_coming_up, get_dashboard_stats, get_recent_runs, get_run_stats_series,
+};
 pub use jobs::{
     can_create_job, create_job, get_job, get_job_access, get_job_pause_info, get_job_revisions,
     get_jobs, get_jobs_page, get_owned_by_options, list_chronon_job_pools, preview_schedule,

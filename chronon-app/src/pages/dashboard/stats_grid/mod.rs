@@ -2,18 +2,23 @@ mod kpis;
 mod skeleton;
 
 use leptos::prelude::*;
-use orbital::components::{SpacingSize, StatCard};
-use orbital::primitives::{Flex, FlexWrap, MessageBar, MessageBarIntent};
+use orbital::components::{AutoGrid, StatCard};
+use orbital::primitives::{MessageBar, MessageBarIntent};
 
 use kpis::{dashboard_stat_memos, KPI_DEFS};
 use skeleton::ChrononStatsSkeleton;
 
-/// Stats cards row showing job and run counts.
+/// Minimum stat card width in the grid.
+pub const STAT_CARD_MIN: &str = "170px";
+
+/// Stat cards: failing jobs, runs today, the share that worked in 24 hours, running now and
+/// paused.
 #[component]
 pub fn ChrononStatsGrid(
-    /// Resource that loads the stats data.
-    stats_res: Resource<Result<crate::server::DashboardStats, ServerFnError>>,
+    /// The dashboard's loads.
+    data: super::DashboardData,
 ) -> impl IntoView {
+    let stats_res = data.stats;
     let memos = StoredValue::new(dashboard_stat_memos(stats_res));
 
     view! {
@@ -21,7 +26,7 @@ pub fn ChrononStatsGrid(
             {move || stats_res.get().map(|r| match r {
                 Ok(_) => view! {
                     <div id="chronon-dashboard-stats">
-                    <Flex gap=SpacingSize::Size160.flex_gap() wrap=FlexWrap::Wrap>
+                    <AutoGrid min=STAT_CARD_MIN>
                         {KPI_DEFS.iter().enumerate().map(|(i, def)| {
                             let value = Signal::derive(move || {
                                 memos.with_value(|m| m[i].get())
@@ -48,9 +53,11 @@ pub fn ChrononStatsGrid(
                                 </div>
                             }
                         }).collect_view()}
-                    </Flex>
+                    </AutoGrid>
                     </div>
                 }.into_any(),
+                // A coordinator outage already shows one error under Needs attention.
+                Err(_) if data.outage() => ().into_any(),
                 Err(e) => view! {
                     <MessageBar intent=MessageBarIntent::Error>
                         "Failed to load stats: " {e.to_string()}

@@ -16,7 +16,11 @@
 //!   English with [`describe`], lists upcoming runs with [`next_runs`] (the Chronon scheduler's
 //!   own math), and names the bad field in a [`FieldError`]. [Get started](#schedule-sentences)
 //! - **Dashboard aggregates** — Provides KPI counters for jobs and today's runs via
-//!   [`dashboard_stats_from_jobs_and_runs`]. [Get started](#dashboard-kpis)
+//!   [`dashboard_stats_from_jobs_and_runs`], the Needs attention list via
+//!   [`attention_from`], and the next runs across jobs via [`coming_up_from`].
+//!   [Get started](#dashboard-kpis)
+//! - **Revision history** — Names who saved each revision, sums up what changed, and writes
+//!   each revision's settings as `key: value` lines for a diff via [`describe_revisions`].
 //! - **Ops path encoding** — Builds percent-encoded path segments for `/chronon` hrefs via
 //!   [`encode_ops_path_segment`], [`chronon_job_path`], [`chronon_run_path`], and related
 //!   helpers.
@@ -159,11 +163,12 @@
 //!
 //! ## Dashboard KPIs
 //!
-//! Dashboard aggregates package job counts and today's run outcomes into a single
+//! Dashboard aggregates package job counts and run outcomes into a single
 //! [`DashboardStats`] value for the ops landing page, without UI-specific formatting.
-//! [`dashboard_stats_from_jobs_and_runs`] takes in-memory job and run slices plus today's
-//! start; chart bucketing lives in [`run_stats_series_from_runs`] after the caller loads run
-//! rows. Call this when a dashboard server function has already loaded those slices from the
+//! [`dashboard_stats_from_jobs_and_runs`] takes in-memory job and run slices plus the
+//! current time; [`attention_from`] and [`coming_up_from`] build the Needs attention and
+//! Coming up cards from the same slices. Chart bucketing lives in
+//! [`run_stats_series_from_runs`] after the caller loads run rows. Call this when a dashboard server function has already loaded those slices from the
 //! coordinator.
 //!
 //! **Prerequisites:** Caller supplies in-memory job and run slices from coordinator queries —
@@ -176,14 +181,14 @@
 //!
 //! let jobs: Vec<CoreJob> = vec![CoreJob::new("nightly-sync", "reports.export")];
 //! let runs: Vec<CoreRun> = vec![];
-//! let today_start = Utc::now();
-//! let stats: DashboardStats = dashboard_stats_from_jobs_and_runs(&jobs, &runs, today_start);
+//! let stats: DashboardStats = dashboard_stats_from_jobs_and_runs(&jobs, &runs, Utc::now());
 //! assert_eq!(stats.total_jobs, 1);
 //! assert_eq!(stats.active_jobs, 1);
 //! ```
 //!
-//! On success `stats` carries `total_jobs`, `active_jobs`, `total_runs_today`, and
-//! `running_now` consumed by `chronon-app` dashboard server functions.
+//! On success `stats` carries `total_jobs`, `active_jobs`, `total_runs_today`,
+//! `running_now`, `failing_jobs` and `worked_24h_permille`, consumed by `chronon-app`
+//! dashboard server functions.
 //!
 //! ## Worker pools
 //!
@@ -254,7 +259,8 @@
 //!
 //! Non-admin callers get empty `params` / `cron` and cleared schedule fields.
 //! Admins (`is_admin = true`) receive the job unchanged. Related:
-//! [`redact_job_revision`] strips actor and params from revision snapshots.
+//! [`redact_job_revision`] strips actor and params from revision snapshots for callers
+//! that can't view the job.
 //! Interactive `run_now` on platform System jobs is refused in `chronon-app`
 //! (schedule-only); this helper does not implement that gate.
 //!
@@ -283,8 +289,9 @@ pub use access::{
     run_error_message, run_refusal, RunRefusal, CHRONON_JOB_KIND, REFUSED_PREFIX,
 };
 pub use dashboard::{
-    align_run_bucket, dashboard_stats_from_jobs_and_runs, run_bucket_granularity,
-    run_stats_series_from_runs, utc_start_of_day, RunBucketGranularity,
+    align_run_bucket, attention_from, coming_up_from, dashboard_stats_from_jobs_and_runs,
+    day_time_label, run_bucket_granularity, run_stats_series_from_runs, scheduler_tick,
+    utc_start_of_day, RunBucketGranularity,
 };
 pub use lookup::{
     find_job_by_id, find_job_by_name, find_run_by_id, find_script_by_name,
@@ -304,7 +311,8 @@ pub use pools::{
     ChrononPoolProvider, UnknownPoolError, DEFAULT_POOL,
 };
 pub use revision::{
-    redact_job_params_for_non_admin, redact_job_revision, redact_revision_snapshot,
+    describe_revisions, redact_job_params_for_non_admin, redact_job_revision,
+    redact_revision_snapshot, revision_settings_text, revision_summary,
 };
 pub use runs::{
     actor_is_system, actor_person_id, apply_run_summary_query, coerce_script_param, day_label,
@@ -322,11 +330,11 @@ pub use schedule::{
     MANUAL_SCHEDULE_TEXT,
 };
 pub use types::{
-    CreateJobRequest, CreateJobScheduleType, DashboardChartPoint, DashboardChartSeries,
-    DashboardStats, DayResult, Job, JobRevision, JobStatus, JobWeek, JobWeekDay, LastRunFailure,
-    RecentRun, Run, RunAttempt, RunDetail, RunNowFacts, RunStatus, RunSummary, Script, ScriptParam,
-    StartedBy, UpdateJobOutcome, UpdateJobRequest, JOBS_PAGE_SIZE, JOB_RUNS_PAGE_SIZE,
-    RUNS_PAGE_SIZE, SCRIPTS_PAGE_SIZE,
+    Attention, AttentionItem, AttentionKind, ComingUpRun, CreateJobRequest, CreateJobScheduleType,
+    DashboardChartPoint, DashboardChartSeries, DashboardStats, DayResult, Job, JobRevision,
+    JobStatus, JobWeek, JobWeekDay, LastRunFailure, RecentRun, Run, RunAttempt, RunDetail,
+    RunNowFacts, RunStatus, RunSummary, Script, ScriptParam, StartedBy, UpdateJobOutcome,
+    UpdateJobRequest, JOBS_PAGE_SIZE, JOB_RUNS_PAGE_SIZE, RUNS_PAGE_SIZE, SCRIPTS_PAGE_SIZE,
 };
 pub use validate::{
     chronon_job_path, chronon_run_path, encode_ops_path_segment, validate_job_id,

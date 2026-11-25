@@ -26,76 +26,68 @@ pub fn ChrononIntroHelp() -> impl IntoView {
     )
 }
 
-/// KPI cards: Total, Active, Paused, Today, Successful, Failed, Running Now.
+/// Needs attention: failed, paused and missed jobs.
+#[help_spotlight_step(
+    route = "/chronon",
+    feature_highlight = "chronon-dashboard-attention",
+    title = "What needs you",
+    spotlight = "chronon-dashboard-attention",
+    position = "bottom",
+    order = 20
+)]
+#[component]
+pub fn ChrononDashboardAttentionHelp() -> impl IntoView {
+    help_stack(
+        "help-step-chronon-dashboard-attention",
+        "Start here. A job shows up when its last run failed, when it's paused, or when it missed a run it should have made.",
+        Some("A run that failed and then worked on a retry doesn't count as failed."),
+        &[],
+    )
+}
+
+/// Stat cards: failing jobs, runs today, worked share, running now, paused.
 #[help_spotlight_step(
     route = "/chronon",
     feature_highlight = "chronon-dashboard-stats",
     title = "At a glance",
     spotlight = "chronon-dashboard-stats",
     position = "bottom",
-    order = 20
+    order = 30
 )]
 #[component]
 pub fn ChrononDashboardStatsHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-dashboard-stats",
-        "These numbers are today's pulse for scheduled work.",
-        Some("Come back here for a quick health check."),
-        &[
-            "Total Jobs: how many schedules exist",
-            "Active: schedules that are armed",
-            "Paused: schedules that will not fire",
-            "Runs Today: attempts started today",
-            "Successful: attempts that finished cleanly",
-            "Failed: attempts that need a look",
-            "Running Now: attempts still in progress",
-        ],
-    )
-}
-
-/// Run outcomes trend chart.
-#[help_spotlight_step(
-    route = "/chronon",
-    feature_highlight = "chronon-run-trend",
-    title = "How runs are finishing",
-    spotlight = "chronon-run-trend-card",
-    position = "top",
-    order = 30
-)]
-#[component]
-pub fn ChrononRunTrendHelp() -> impl IntoView {
-    help_stack(
-        "help-step-chronon-run-trend",
-        "The chart compares successful vs failed finishes. Use it when you want the reliability story, not just a single error.",
-        Some("Tip: switch 24h / 7d to change the window."),
+        "A run and its retries count once, by how the last attempt ended.",
+        Some("Worked (24h) is the share of runs that finished cleanly in the last 24 hours."),
         &[],
     )
 }
 
-/// Shortcut to full Runs history.
+/// Coming up: the next runs across every job.
 #[help_spotlight_step(
     route = "/chronon",
-    feature_highlight = "chronon-view-all-runs",
-    title = "View all runs",
-    spotlight = "chronon-run-trend-view-all",
+    feature_highlight = "chronon-dashboard-coming-up",
+    title = "What runs next",
+    spotlight = "chronon-dashboard-coming-up",
     position = "top",
     order = 40
 )]
 #[component]
-pub fn ChrononViewAllRunsHelp() -> impl IntoView {
+pub fn ChrononDashboardComingUpHelp() -> impl IntoView {
     help_stack(
-        "help-step-chronon-view-all-runs",
-        "Opens the full Runs history for every Job. Use this when Recent Runs is not enough.",
-        None,
+        "help-step-chronon-dashboard-coming-up",
+        "The next five runs across every active job. Paused jobs don't appear until someone resumes them.",
+        Some("First run marks a job that has never run, so check its first result."),
         &[],
     )
 }
 
-/// Recent Runs table on the dashboard.
+/// Recent runs on the dashboard.
 #[help_spotlight_step(
     route = "/chronon",
     feature_highlight = "chronon-dashboard-recent",
-    title = "Latest attempts",
+    title = "Latest runs",
     spotlight = "chronon-dashboard-recent-runs",
     position = "top",
     order = 50
@@ -104,14 +96,9 @@ pub fn ChrononViewAllRunsHelp() -> impl IntoView {
 pub fn ChrononDashboardRecentHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-dashboard-recent",
-        "Each row is one Run. Click a row to read that attempt's output.",
-        None,
-        &[
-            "Job: which schedule produced it",
-            "Status: success, failure, or still running",
-            "Started: when the attempt began",
-            "Duration: how long it took",
-        ],
+        "Click a row to read that run's attempts and output. Retries are folded into the run they retry.",
+        Some("The run outcomes chart is on the Runs page."),
+        &[],
     )
 }
 

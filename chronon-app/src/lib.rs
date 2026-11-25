@@ -74,32 +74,34 @@
 //!
 //! ## Dashboard KPIs
 //!
-//! The dashboard answers how much scheduled work is active right now: total and paused
-//! jobs, runs started today, and runs currently executing.
-//! [`ChrononDashboardPage`] calls [`get_dashboard_stats`] on each SSR render and
-//! [`get_run_stats_series`] for trend charts — use this landing page after mounting routes
-//! when operators need a quick health snapshot.
+//! The dashboard answers what needs someone's attention and what runs next: jobs whose last
+//! run failed (retries folded in), paused jobs and missed runs; failing jobs, runs today,
+//! the share that worked in the last 24 hours, runs going now and paused jobs; the next five
+//! runs across every job; and the newest runs. [`ChrononDashboardPage`] calls
+//! [`get_attention`], [`get_dashboard_stats`], [`get_coming_up`] and [`get_recent_runs`].
+//! The run outcomes chart ([`get_run_stats_series`]) sits under the Runs table.
 //!
 //! **Prerequisites:** [`ChrononRoutes`] mounted; `ssr` feature; Chronon backend request
 //! context wired. Counts cover the jobs the reader can view.
 //!
 //! ```rust,ignore
-//! use chronon_app::{
-//!     ChrononDashboardPage, get_dashboard_stats, get_run_stats_series, DashboardStats,
-//! };
+//! use chronon_app::{get_attention, get_coming_up, get_dashboard_stats, DashboardStats};
 //!
-//! // ChrononDashboardPage calls these on each SSR render:
+//! let attention = get_attention().await?;
+//! for item in &attention.items {
+//!     println!("{}: {}", item.title, item.detail);
+//! }
 //! let stats: DashboardStats = get_dashboard_stats().await?;
-//! assert_eq!(stats.total_jobs, 3);
-//! assert_eq!(stats.running_now, 1);
+//! assert_eq!(stats.failing_jobs, 1);
 //!
-//! let series = get_run_stats_series(86_400).await?;
-//! assert!(!series.is_empty());
+//! let next = get_coming_up(5).await?;
+//! assert!(next.len() <= 5);
 //! ```
 //!
-//! On success `stats` carries `total_jobs`, `active_jobs`, `total_runs_today`, and
-//! `running_now`; `series` holds chart buckets for successful and failed runs. Blank or
-//! unsafe path ids are rejected by `chronon_backend::validate_*` before coordinator IO.
+//! On success `attention.items` lists failed, paused and missed jobs (empty when nothing
+//! needs anyone), `stats` carries the counts behind the stat cards, and `next` holds each
+//! upcoming run with its schedule sentence. Blank or unsafe path ids are rejected by
+//! `chronon_backend::validate_*` before coordinator IO.
 //!
 //! ## Browse jobs
 //!
@@ -245,11 +247,11 @@
 //!
 //! | Path | Page | Key server fn(s) |
 //! |---|---|---|
-//! | `/chronon` | [`ChrononDashboardPage`] | [`get_dashboard_stats`], [`get_recent_runs`], [`get_run_stats_series`] |
+//! | `/chronon` | [`ChrononDashboardPage`] | [`get_attention`], [`get_dashboard_stats`], [`get_coming_up`], [`get_recent_runs`] |
 //! | `/chronon/jobs` | [`ChrononJobsPage`] | [`get_jobs_page`] |
 //! | `/chronon/jobs/new` (email-verified) | [`ChrononJobCreatePage`] | [`create_job`] |
 //! | `/chronon/jobs/:job_id` (email-verified) | [`ChrononJobDetailPage`] | [`get_job`], [`get_job_revisions`], [`update_job`], [`get_job_runs_page`] |
-//! | `/chronon/runs` | [`ChrononRunsPage`] | [`get_runs_page`] |
+//! | `/chronon/runs` | [`ChrononRunsPage`] | [`get_runs_page`], [`get_run_stats_series`] |
 //! | `/chronon/runs/:run_id` | [`ChrononRunDetailPage`] | [`get_run`], [`run_job_now`] |
 //! | `/chronon/scripts` | [`ChrononScriptsPage`] | [`get_scripts_page`] |
 //!
@@ -310,13 +312,14 @@ pub use pages::{
 };
 // Types, permission const, and server fn stubs (WASM-safe client stubs + SSR bodies).
 pub use server::{
-    create_job, get_dashboard_stats, get_job, get_job_revisions, get_job_runs_page, get_job_week,
-    get_jobs, get_jobs_page, get_recent_runs, get_run, get_run_attempts, get_run_detail,
-    get_run_now_facts, get_run_stats_series, get_runs, get_runs_caption, get_runs_page,
-    get_scripts, get_scripts_page, list_chronon_job_pools, run_job_now, update_job,
-    ChrononPoolPickRow, ChrononPoolProvider, DashboardChartPoint, DashboardChartSeries,
-    DashboardStats, Job, JobRevision, JobStatus, JobWeek, RecentRun, Run, RunAttempt, RunDetail,
-    RunNowFacts, RunStatus, RunSummary, Script, ScriptParam, StartedBy, UpdateJobRequest,
+    create_job, get_attention, get_coming_up, get_dashboard_stats, get_job, get_job_revisions,
+    get_job_runs_page, get_job_week, get_jobs, get_jobs_page, get_recent_runs, get_run,
+    get_run_attempts, get_run_detail, get_run_now_facts, get_run_stats_series, get_runs,
+    get_runs_caption, get_runs_page, get_scripts, get_scripts_page, list_chronon_job_pools,
+    run_job_now, update_job, Attention, AttentionItem, AttentionKind, ChrononPoolPickRow,
+    ChrononPoolProvider, ComingUpRun, DashboardChartPoint, DashboardChartSeries, DashboardStats,
+    Job, JobRevision, JobStatus, JobWeek, RecentRun, Run, RunAttempt, RunDetail, RunNowFacts,
+    RunStatus, RunSummary, Script, ScriptParam, StartedBy, UpdateJobRequest,
     CHRONON_ADMIN_PERMISSION,
 };
 

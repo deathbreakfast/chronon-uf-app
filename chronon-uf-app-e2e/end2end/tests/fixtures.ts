@@ -41,14 +41,14 @@ const CHRONON_HELP_STEPS_SEEN = [
   },
   {
     route: "/chronon",
-    feature_highlight: "chronon-run-trend",
-    spotlight: "chronon-run-trend-card",
+    feature_highlight: "chronon-dashboard-attention",
+    spotlight: "chronon-dashboard-attention",
     replay: false,
   },
   {
     route: "/chronon",
-    feature_highlight: "chronon-view-all-runs",
-    spotlight: "chronon-run-trend-view-all",
+    feature_highlight: "chronon-dashboard-coming-up",
+    spotlight: "chronon-dashboard-coming-up",
     replay: false,
   },
   {
@@ -217,6 +217,12 @@ const CHRONON_HELP_STEPS_SEEN = [
     route: "/chronon/runs",
     feature_highlight: "chronon-runs-open",
     spotlight: "chronon-runs-data-table",
+    replay: false,
+  },
+  {
+    route: "/chronon/runs",
+    feature_highlight: "chronon-runs-trend",
+    spotlight: "chronon-run-trend-card",
     replay: false,
   },
   {
