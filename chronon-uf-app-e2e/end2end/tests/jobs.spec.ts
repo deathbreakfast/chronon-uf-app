@@ -27,6 +27,19 @@ test.describe("pw-chronon-jobs", () => {
     });
   });
 
+  test("pw-chronon-jobs-happy-last-run-failed", async ({ page }) => {
+    const seeded = await seedAuth(page, "admin");
+    await page.goto("/chronon/jobs", { waitUntil: "domcontentloaded" });
+    await waitForHydrated(page);
+    // The purge fixture's newest run failed on every attempt a few minutes ago.
+    const row = page.getByTestId("chronon-jobs-data-table").getByRole("row", {
+      name: new RegExp(seeded.fixtures.purge_job_name),
+    });
+    const cell = row.getByTestId("jobs-last-run-cell");
+    await expect(cell).toContainText("Failed", { timeout: 60_000 });
+    await expect(cell).not.toContainText("\u2014");
+  });
+
   test("pw-chronon-jobs-sad-outsider-no-owner-or-schedule", async ({ page }) => {
     const seeded = await seedAuth(page, "outsider");
     await page.goto(`/chronon/jobs/${encodeURIComponent(seeded.fixtures.job_id)}`, {

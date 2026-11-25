@@ -26,6 +26,8 @@
 mod dashboard;
 mod helpers;
 mod jobs;
+#[cfg(feature = "ssr")]
+mod people;
 pub mod query;
 mod runs;
 mod scripts;

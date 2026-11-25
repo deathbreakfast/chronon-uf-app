@@ -28,7 +28,7 @@ async fn can_run_job(_job: &chronon_coordinator::models::Job) -> bool {
 }
 
 #[cfg(feature = "ssr")]
-async fn scan_runs(
+pub(super) async fn scan_runs(
     backend: &dyn ChrononCoordinatorBackend,
     job_id: Option<&str>,
 ) -> Result<Vec<chronon_coordinator::models::Run>, ServerFnError> {
@@ -38,15 +38,33 @@ async fn scan_runs(
         .map_err(|e| ServerFnError::new(format!("Failed to list runs: {}", e)))
 }
 
+/// Display names of the people in `runs`' actors, read as the session's actor.
+#[cfg(feature = "ssr")]
+async fn people_names(
+    ctx: &higgs::Higgs,
+    runs: &[chronon_coordinator::models::Run],
+) -> Result<std::collections::HashMap<String, String>, ServerFnError> {
+    let ids = chronon_backend::run_now_user_ids(runs);
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let valence = ctx
+        .valence()
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    super::people::display_names(&valence, &ids).await
+}
+
 #[cfg(feature = "ssr")]
 async fn summaries_page(
+    ctx: &higgs::Higgs,
     backend: &dyn ChrononCoordinatorBackend,
     job_id: Option<&str>,
     request: PageRequest,
 ) -> Result<Page<RunSummary>, ServerFnError> {
     let runs = scan_runs(backend, job_id).await?;
     let jobs = backend.list_jobs().await;
-    let mut rows = chronon_backend::fold_runs(&runs, &jobs);
+    let names = people_names(ctx, &runs).await?;
+    let mut rows = chronon_backend::fold_runs(&runs, &jobs, &names);
     chronon_backend::apply_run_summary_query(&mut rows, &request, chrono::Utc::now());
     let total_count = Some(rows.len() as u64);
     let sliced: Vec<RunSummary> = rows
@@ -122,7 +140,7 @@ pub async fn get_runs_page(
     let ctx = higgs::Higgs::from_request().await?;
     require_session(&ctx)?;
     let backend = super::ssr_utils::chronon_backend()?;
-    summaries_page(backend.as_ref(), None, request).await
+    summaries_page(&ctx, backend.as_ref(), None, request).await
 }
 
 /// One page of a job's runs (retries folded in), with the same filters as [`get_runs_page`].
@@ -138,7 +156,7 @@ pub async fn get_job_runs_page(
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
     let actual_job_id = require_job_id(backend, &job_id_or_name).await?;
-    summaries_page(backend, Some(actual_job_id.as_str()), request).await
+    summaries_page(&ctx, backend, Some(actual_job_id.as_str()), request).await
 }
 
 /// Caption over the Runs table: how many runs fall in the time filter and which retried.
@@ -159,7 +177,8 @@ pub async fn get_runs_caption(
     };
     let runs = scan_runs(backend, job_id.as_deref()).await?;
     let jobs = backend.list_jobs().await;
-    let mut rows = chronon_backend::fold_runs(&runs, &jobs);
+    // Counts only, so Started by names aren't needed.
+    let mut rows = chronon_backend::fold_runs(&runs, &jobs, &std::collections::HashMap::new());
     let time_filter = chronon_backend::RunTimeFilter::parse(&time);
     if let Some(since) = time_filter.since(chrono::Utc::now()) {
         rows.retain(|r| {
@@ -274,7 +293,8 @@ pub async fn get_run_detail(
     let group = chronon_backend::find_run_group(&runs, &run_id).unwrap_or_default();
     let root = group.first().copied().unwrap_or(&run);
     let root_started = root.started_at.unwrap_or(root.scheduled_for);
-    let started_by = chronon_backend::started_by(&run, &root.run_id, job.as_ref());
+    let names = people_names(&ctx, std::slice::from_ref(&run)).await?;
+    let started_by = chronon_backend::started_by(&run, &root.run_id, job.as_ref(), &names);
     let started_by_label =
         chronon_backend::started_by_label(&started_by, job.as_ref(), root_started);
     let can_run = match job.as_ref() {

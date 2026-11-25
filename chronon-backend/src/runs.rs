@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
+use std::hash::BuildHasher;
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
 use chronon_core::{Job as CoreJob, Run as CoreRun, RunStatus as CoreRunStatus, ScheduleKind};
@@ -15,6 +16,7 @@ use orbital_paging::{FilterQuery, PageRequest};
 use serde_json::Value;
 
 use crate::map::chronon_run_status_to_ui;
+use crate::schedule::actor_user_id;
 use crate::types::{
     DayResult, JobWeek, JobWeekDay, LastRunFailure, RunAttempt, RunSummary, StartedBy,
 };
@@ -73,9 +75,15 @@ const fn is_retry(run: &CoreRun) -> bool {
 /// A retry (attempt above 1, or a `parent_run_id`) is [`StartedBy::Retry`] of `root_run_id`.
 /// A System or null actor is the schedule. A person's actor on a fire time of the job's
 /// schedule is the schedule too, because scheduled runs of a job a person created carry that
-/// person's actor. Any other run is that person's Run now.
+/// person's actor. Any other run is that person's Run now, labelled with their display name
+/// from `names` (keyed by user id), or their user id when `names` has none.
 #[must_use]
-pub fn started_by(run: &CoreRun, root_run_id: &str, job: Option<&CoreJob>) -> StartedBy {
+pub fn started_by<S: BuildHasher>(
+    run: &CoreRun,
+    root_run_id: &str,
+    job: Option<&CoreJob>,
+    names: &HashMap<String, String, S>,
+) -> StartedBy {
     if is_retry(run) {
         return StartedBy::Retry {
             of: root_run_id.to_string(),
@@ -87,10 +95,27 @@ pub fn started_by(run: &CoreRun, root_run_id: &str, job: Option<&CoreJob>) -> St
     if job.is_some_and(|j| is_schedule_fire_time(j, run.scheduled_for)) {
         return StartedBy::Schedule;
     }
-    let who = actor_person_id(&run.actor_json).unwrap_or_else(|| "Someone".to_string());
+    let who = actor_user_id(&run.actor_json)
+        .and_then(|id| names.get(id).cloned())
+        .or_else(|| actor_person_id(&run.actor_json))
+        .unwrap_or_else(|| "Someone".to_string());
     StartedBy::Person {
         label: format!("{who} (Run now)"),
     }
+}
+
+/// The distinct user ids in the runs' actor snapshots, for looking up display names.
+///
+/// Service users and System actors are left out: a service user's label is its name already.
+#[must_use]
+pub fn run_now_user_ids(runs: &[CoreRun]) -> Vec<String> {
+    let mut ids: Vec<String> = runs
+        .iter()
+        .filter_map(|r| actor_user_id(&r.actor_json).map(str::to_string))
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
 }
 
 /// Groups attempts into runs: each first attempt with the retries that followed it.
@@ -179,9 +204,13 @@ fn duration_u64(ms: Option<i64>) -> Option<u64> {
 /// Builds the runs-table row for one group.
 ///
 /// `result` is the final attempt's status. A retried run's duration is the average over the
-/// attempts that recorded one.
+/// attempts that recorded one. `names` labels a person's Run now, as in [`started_by`].
 #[must_use]
-pub fn summarize_group(group: &[&CoreRun], job: Option<&CoreJob>) -> Option<RunSummary> {
+pub fn summarize_group<S: BuildHasher>(
+    group: &[&CoreRun],
+    job: Option<&CoreJob>,
+    names: &HashMap<String, String, S>,
+) -> Option<RunSummary> {
     let root = *group.first()?;
     let last = *group.last()?;
     let durations: Vec<u64> = group
@@ -203,14 +232,19 @@ pub fn summarize_group(group: &[&CoreRun], job: Option<&CoreJob>) -> Option<RunS
         attempts: u32::try_from(group.len()).unwrap_or(u32::MAX),
         started_at: started_time(root).to_rfc3339(),
         duration_ms,
-        started_by: started_by(root, &root.run_id, job),
+        started_by: started_by(root, &root.run_id, job, names),
         params: root.params_json.clone(),
     })
 }
 
-/// Folds attempts into runs-table rows, newest first. Jobs resolve names and schedules.
+/// Folds attempts into runs-table rows, newest first. Jobs resolve names and schedules;
+/// `names` maps user ids to display names for Started by.
 #[must_use]
-pub fn fold_runs(runs: &[CoreRun], jobs: &[CoreJob]) -> Vec<RunSummary> {
+pub fn fold_runs<S: BuildHasher>(
+    runs: &[CoreRun],
+    jobs: &[CoreJob],
+    names: &HashMap<String, String, S>,
+) -> Vec<RunSummary> {
     let by_id: HashMap<&str, &CoreJob> = jobs.iter().map(|j| (j.job_id.as_str(), j)).collect();
     group_runs(runs)
         .iter()
@@ -219,7 +253,7 @@ pub fn fold_runs(runs: &[CoreRun], jobs: &[CoreJob]) -> Vec<RunSummary> {
                 .first()
                 .and_then(|r| r.job_id.as_deref())
                 .and_then(|id| by_id.get(id).copied());
-            summarize_group(group, job)
+            summarize_group(group, job, names)
         })
         .collect()
 }
