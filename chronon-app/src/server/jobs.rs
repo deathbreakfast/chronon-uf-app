@@ -5,7 +5,7 @@ use orbital_paging::{Page, PageRequest};
 
 #[cfg(feature = "ssr")]
 use super::helpers::{
-    apply_update_payload_to_job, backend_job_to_job, build_create_job_model,
+    actor_display_names, apply_update_payload_to_job, backend_job_to_job, build_create_job_model,
     ensure_job_name_available, load_existing_job_for_update, persist_updated_job_config,
 };
 #[cfg(feature = "ssr")]
@@ -294,20 +294,20 @@ async fn save_job_update(
             .map_err(|e| ServerFnError::new(format!("Failed to list revisions: {}", e)))?
             .into_iter()
             .max_by_key(|r| r.revision_number);
-        let (by, at) = latest.map_or_else(
+        let (actor, at) = latest.map_or_else(
             || {
                 (
-                    chronon_backend::actor_label(&existing_job.actor_json),
+                    existing_job.actor_json.clone(),
                     existing_job.updated_at.to_rfc3339(),
                 )
             },
-            |r| {
-                (
-                    chronon_backend::actor_label(&r.changed_by_actor_json),
-                    r.changed_at.to_rfc3339(),
-                )
-            },
+            |r| (r.changed_by_actor_json, r.changed_at.to_rfc3339()),
         );
+        let valence = ctx
+            .valence()
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let names = actor_display_names(&valence, [&actor]).await;
+        let by = chronon_backend::actor_label_named(&actor, &names);
         return Ok(UpdateJobOutcome::Conflict {
             revision: current,
             by,
@@ -387,10 +387,15 @@ pub async fn get_job_pause_info(
             )
         })
         .collect();
+    let valence = ctx
+        .valence()
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let names = actor_display_names(&valence, revisions.iter().map(|r| &r.2)).await;
     Ok(chronon_backend::pause_info_from_revisions(
         &job,
         &revisions,
         chrono::Utc::now(),
+        &names,
     ))
 }
 

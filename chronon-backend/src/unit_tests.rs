@@ -596,6 +596,23 @@ fn apply_update_payload_to_job_normalizes_null_params_happy_path() {
 }
 
 #[test]
+fn apply_update_payload_to_job_counts_revision_up_happy_path() {
+    let mut existing = CoreJob::new("nightly", "cleanup_script");
+    existing.current_revision = 3;
+    let payload = UpdateJobRequest {
+        job_name: "nightly".into(),
+        cron_expr: Some("0 3 * * *".into()),
+        timezone: None,
+        params: serde_json::json!({}),
+        enabled: true,
+        pool: None,
+        expected_revision: Some(3),
+    };
+    let updated = apply_update_payload_to_job(existing, &payload).expect("update");
+    assert_eq!(updated.current_revision, 4);
+}
+
+#[test]
 fn job_status_serde_roundtrip_happy_path() {
     let status = JobStatus::Active;
     let json = serde_json::to_string(&status).expect("serialize");
