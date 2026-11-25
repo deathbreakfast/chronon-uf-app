@@ -2,8 +2,8 @@
 //! run-trend chart on the Runs page.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::hash::BuildHasher;
 use std::fmt::Write as _;
+use std::hash::BuildHasher;
 
 use chrono::{DateTime, Duration, NaiveTime, Timelike, Utc};
 use chronon_core::{Job as CoreJob, Run as CoreRun, RunStatus as CoreRunStatus, ScheduleKind};

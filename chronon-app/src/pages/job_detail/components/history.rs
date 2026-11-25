@@ -112,20 +112,22 @@ pub fn JobHistory(
                             <TableBody>
                                 <Show
                                     when=move || revisions.with(Option::is_some)
-                                    fallback=move || view! {
-                                        <Skeleton>
-                                            {(0..2).map(|_| view! {
-                                                <TableRow>
-                                                    {(0..4).map(|_| view! {
-                                                        <TableCell>
-                                                            <TableCellLayout>
+                                    fallback=move || {
+                                        // Skeleton is a div, so it goes inside each cell: a div
+                                        // directly in <tbody> breaks hydration.
+                                        (0..2).map(|_| view! {
+                                            <TableRow>
+                                                {(0..4).map(|_| view! {
+                                                    <TableCell>
+                                                        <TableCellLayout>
+                                                            <Skeleton>
                                                                 <SkeletonItem size=skeleton_size />
-                                                            </TableCellLayout>
-                                                        </TableCell>
-                                                    }).collect_view()}
-                                                </TableRow>
-                                            }).collect_view()}
-                                        </Skeleton>
+                                                            </Skeleton>
+                                                        </TableCellLayout>
+                                                    </TableCell>
+                                                }).collect_view()}
+                                            </TableRow>
+                                        }).collect_view()
                                     }
                                 >
                                     <For

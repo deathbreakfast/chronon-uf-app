@@ -101,19 +101,23 @@ fn TableSkeletonRows(
     cols: usize,
 ) -> impl IntoView {
     let size = Signal::from(SkeletonItemSize::S16);
-    view! {
-        <Skeleton>
-            {(0..rows).map(|_| view! {
+    // Skeleton is a div, so it goes inside each cell: a div directly in <tbody> breaks
+    // hydration.
+    (0..rows)
+        .map(|_| {
+            view! {
                 <TableRow>
                     {(0..cols).map(|_| view! {
                         <TableCell>
                             <TableCellLayout>
-                                <SkeletonItem size=size />
+                                <Skeleton>
+                                    <SkeletonItem size=size />
+                                </Skeleton>
                             </TableCellLayout>
                         </TableCell>
                     }).collect_view()}
                 </TableRow>
-            }).collect_view()}
-        </Skeleton>
-    }
+            }
+        })
+        .collect_view()
 }
