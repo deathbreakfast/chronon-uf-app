@@ -242,7 +242,8 @@ pub async fn get_job(
 /// Get all revisions for a job (by ID or name), newest first. Needs View on the job.
 ///
 /// Each revision names who saved it, sums up what it changed, and carries its settings
-/// (parameters included) as `key: value` lines for the History diff.
+/// (parameters included) as `key: value` lines for the History diff. The raw actor JSON
+/// and the snapshot's actor and params stay on the server.
 #[uf_product_macros::server]
 pub async fn get_job_revisions(
     /// Job ID or job name whose revisions should be listed.
@@ -281,7 +282,15 @@ pub async fn get_job_revisions(
         })
         .collect();
 
-    Ok(chronon_backend::describe_revisions(job_revisions))
+    // saved_by and settings_text carry what History shows; raw actor identity stays here.
+    Ok(chronon_backend::describe_revisions(job_revisions)
+        .into_iter()
+        .map(|mut r| {
+            r.changed_by_actor_json = serde_json::Value::Null;
+            r.snapshot_json = chronon_backend::redact_revision_snapshot(r.snapshot_json);
+            r
+        })
+        .collect())
 }
 
 /// Update a job's configuration (creates a new revision).

@@ -29,7 +29,6 @@ fn saved_at_label(changed_at: &str) -> String {
 
 /// History tab body. Revisions load once per saved revision of the job; picking a row only
 /// changes which revision the diff shows, so nothing reloads.
-#[allow(clippy::too_many_lines)]
 #[component]
 pub fn JobHistory(
     /// Shared job page state (job id, current revision, access).
@@ -62,14 +61,15 @@ pub fn JobHistory(
         })
     });
 
-    let skeleton_size = Signal::from(SkeletonItemSize::S16);
     let (style_sheet, class_names) = turf::inline_style_sheet_values! {
         .Row { cursor: pointer; }
         .Row:hover { background: var(--colorNeutralBackground1Hover); }
         .Selected { background: var(--colorNeutralBackground1Selected); }
     };
-    let row_class = StoredValue::new(class_names.row.to_string());
-    let selected_class = StoredValue::new(format!("{} {}", class_names.row, class_names.selected));
+    let classes = RowClasses {
+        row: StoredValue::new(class_names.row.to_string()),
+        selected: StoredValue::new(format!("{} {}", class_names.row, class_names.selected)),
+    };
 
     view! {
         <style>{style_sheet}</style>
@@ -112,74 +112,20 @@ pub fn JobHistory(
                             <TableBody>
                                 <Show
                                     when=move || revisions.with(Option::is_some)
-                                    fallback=move || {
-                                        // Skeleton is a div, so it goes inside each cell: a div
-                                        // directly in <tbody> breaks hydration.
-                                        (0..2).map(|_| view! {
-                                            <TableRow>
-                                                {(0..4).map(|_| view! {
-                                                    <TableCell>
-                                                        <TableCellLayout>
-                                                            <Skeleton>
-                                                                <SkeletonItem size=skeleton_size />
-                                                            </Skeleton>
-                                                        </TableCellLayout>
-                                                    </TableCell>
-                                                }).collect_view()}
-                                            </TableRow>
-                                        }).collect_view()
-                                    }
+                                    fallback=|| view! { <HistorySkeletonRows /> }
                                 >
                                     <For
                                         each=move || rows.get()
                                         key=|rev| rev.revision_id.clone()
                                         let:rev
                                     >
-                                        {
-                                            let number = rev.revision_number;
-                                            let is_shown = move || shown.get() == Some(number);
-                                            let class = Signal::derive(move || {
-                                                if is_shown() { selected_class.get_value() } else { row_class.get_value() }
-                                            });
-                                            let select = move || selected.set(Some(number));
-                                            view! {
-                                                <TableRow
-                                                    class=class
-                                                    attr:data-testid="job-history-row"
-                                                    attr:data-revision=number.to_string()
-                                                    attr:data-selected=move || is_shown().to_string()
-                                                    attr:aria-selected=move || is_shown().to_string()
-                                                    attr:tabindex="0"
-                                                    on:click=move |_| select()
-                                                    on:keydown=move |ev: leptos::ev::KeyboardEvent| {
-                                                        if ev.key() == "Enter" || ev.key() == " " {
-                                                            ev.prevent_default();
-                                                            select();
-                                                        }
-                                                    }
-                                                >
-                                                    <TableCell>
-                                                        <Flex align=FlexAlign::Center gap=SpacingSize::Size80.flex_gap()>
-                                                            <Body1Strong>{format!("Revision {number}")}</Body1Strong>
-                                                            <Show when=move || current.get() == Some(number)>
-                                                                <span data-testid="job-history-current">
-                                                                    <Badge
-                                                                        appearance=BadgeAppearance::Tint
-                                                                        color=BadgeColor::Brand
-                                                                        size=BadgeSize::Small
-                                                                    >
-                                                                        "Current"
-                                                                    </Badge>
-                                                                </span>
-                                                            </Show>
-                                                        </Flex>
-                                                    </TableCell>
-                                                    <TableCell><Body1>{rev.saved_by.clone()}</Body1></TableCell>
-                                                    <TableCell><Body1>{saved_at_label(&rev.changed_at)}</Body1></TableCell>
-                                                    <TableCell><Caption1>{rev.summary.clone()}</Caption1></TableCell>
-                                                </TableRow>
-                                            }
-                                        }
+                                        <HistoryRow
+                                            rev=rev
+                                            shown=shown
+                                            current=current
+                                            selected=selected
+                                            classes=classes
+                                        />
                                     </For>
                                 </Show>
                             </TableBody>
@@ -193,6 +139,101 @@ pub fn JobHistory(
 
             {move || pair.get().map(|(rev, before)| view! { <RevisionDiffCard rev=rev before=before /> })}
         </Flex>
+    }
+}
+
+/// Row classes for the History table: plain, and plain plus the selected highlight.
+#[derive(Clone, Copy)]
+struct RowClasses {
+    row: StoredValue<String>,
+    selected: StoredValue<String>,
+}
+
+/// Placeholder rows while revisions load.
+#[component]
+fn HistorySkeletonRows() -> impl IntoView {
+    let size = Signal::from(SkeletonItemSize::S16);
+    // Skeleton is a div, so it goes inside each cell: a div directly in <tbody> breaks
+    // hydration.
+    (0..2)
+        .map(|_| {
+            view! {
+                <TableRow>
+                    {(0..4).map(|_| view! {
+                        <TableCell>
+                            <TableCellLayout>
+                                <Skeleton>
+                                    <SkeletonItem size=size />
+                                </Skeleton>
+                            </TableCellLayout>
+                        </TableCell>
+                    }).collect_view()}
+                </TableRow>
+            }
+        })
+        .collect_view()
+}
+
+/// One revision row. Clicking it (or Enter / Space) shows its diff; nothing reloads.
+#[component]
+fn HistoryRow(
+    /// The revision.
+    rev: JobRevision,
+    /// Revision whose diff is showing.
+    shown: Memo<Option<u32>>,
+    /// The newest revision, which gets the Current badge.
+    current: Memo<Option<u32>>,
+    /// The revision the person picked (`None` means the current one).
+    selected: RwSignal<Option<u32>>,
+    /// Row and selected-row classes.
+    classes: RowClasses,
+) -> impl IntoView {
+    let number = rev.revision_number;
+    let is_shown = move || shown.get() == Some(number);
+    let class = Signal::derive(move || {
+        if is_shown() {
+            classes.selected.get_value()
+        } else {
+            classes.row.get_value()
+        }
+    });
+    let select = move || selected.set(Some(number));
+    view! {
+        <TableRow
+            class=class
+            attr:data-testid="job-history-row"
+            attr:data-revision=number.to_string()
+            attr:data-selected=move || is_shown().to_string()
+            attr:aria-selected=move || is_shown().to_string()
+            attr:tabindex="0"
+            on:click=move |_| select()
+            on:keydown=move |ev: leptos::ev::KeyboardEvent| {
+                if ev.key() == "Enter" || ev.key() == " " {
+                    ev.prevent_default();
+                    select();
+                }
+            }
+        >
+            <TableCell>
+                <Flex align=FlexAlign::Center gap=SpacingSize::Size80.flex_gap()>
+                    <Body1Strong>{format!("Revision {number}")}</Body1Strong>
+                    <Show when=move || current.get() == Some(number)>
+                        <span data-testid="job-history-current">
+                            <Badge
+                                appearance=BadgeAppearance::Tint
+                                color=BadgeColor::Brand
+                                size=BadgeSize::Small
+                            >
+                                "Current"
+                            </Badge>
+                        </span>
+                    </Show>
+                </Flex>
+            </TableCell>
+            <TableCell><Body1>{rev.saved_by}</Body1></TableCell>
+            <TableCell><Body1>{saved_at_label(&rev.changed_at)}</Body1></TableCell>
+            <TableCell><Caption1>{rev.summary}</Caption1></TableCell>
+        </TableRow>
     }
 }
 
