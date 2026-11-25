@@ -63,6 +63,14 @@ mod tests {
             timezone: Some("UTC".into()),
             params: serde_json::json!({"token": "secret", "bucket": "prod"}),
             pool: None,
+            schedule_text: String::new(),
+            last_run_attempts: None,
+            owner_label: String::new(),
+            system_owned: false,
+            concurrency: 1,
+            timeout_ms: None,
+            retry_max_attempts: 0,
+            retry_base_delay_ms: 0,
         }
     }
 

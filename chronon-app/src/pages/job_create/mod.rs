@@ -1,5 +1,5 @@
-mod components;
-mod form_state;
+pub mod components;
+pub mod form_state;
 
 use std::collections::HashMap;
 
@@ -8,15 +8,35 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 use leptos_router::NavigateOptions;
 use orbital::components::{ContentContainer, SpacingSize, Title3};
-use orbital::primitives::{Button, ButtonAppearance, Flex, MessageBar, MessageBarIntent};
+use orbital::primitives::{
+    Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, Flex, MessageBar,
+    MessageBarBody, MessageBarIntent, MessageBarTitle,
+};
 
 use crate::server::{
-    create_job, get_scripts, CreateJobRequest, CreateJobScheduleType, Script, DEFAULT_POOL,
+    create_job, get_scripts, CreateJobRequest, CreateJobScheduleType, ScheduleField,
+    SchedulePreview, Script, DEFAULT_POOL,
 };
 use components::{
-    ActionsSection, AdvancedOptionsSection, BasicInfoSection, ParametersSection, ScheduleSection,
+    ActionsSection, AdvancedOptionsSection, BasicInfoSection, ParametersSection, RunOnceFields,
+    ScheduleSection,
 };
-use form_state::{build_create_params, collect_param_values, seed_param_signals};
+use form_state::{
+    build_create_params_by_field, collect_param_values, errors_summary, run_once_instant,
+    seed_param_signals, FieldErrors,
+};
+
+/// Label for a field-error key in the summary at the top of the form.
+fn field_label(key: &str) -> String {
+    match key {
+        "job_name" => "Job name".to_string(),
+        "script" => "Script".to_string(),
+        "cron" => "Cron".to_string(),
+        "timezone" => "Timezone".to_string(),
+        "run_once" => "Date and time".to_string(),
+        other => other.strip_prefix("param:").unwrap_or(other).to_string(),
+    }
+}
 
 /// Schedule type for job creation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -42,10 +62,17 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
     let job_name = RwSignal::new(String::new());
     let selected_script = RwSignal::new(String::new());
     let schedule_type = RwSignal::new(ScheduleType::Cron);
-    let cron_expression = RwSignal::new(String::from("0 * * * *"));
+    let cron_expression = RwSignal::new(String::from("0 3 * * *"));
     let timezone = RwSignal::new(String::from("UTC"));
-    let run_once_datetime = RwSignal::new(String::new());
+    let preview = RwSignal::new(SchedulePreview::default());
+    let run_once = RunOnceFields {
+        date: RwSignal::new(String::new()),
+        time: RwSignal::new(String::from("02:00")),
+        timezone: RwSignal::new(String::from("UTC")),
+    };
     let param_signals = RwSignal::new(HashMap::<String, RwSignal<String>>::new());
+    let param_errors = RwSignal::new(HashMap::<String, String>::new());
+    let errors = RwSignal::new(FieldErrors::new());
 
     // Advanced options (use String for input binding)
     let show_advanced = RwSignal::new(false);
@@ -81,80 +108,100 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
         if create_loading.get() {
             return;
         }
+        create_error.set(None);
 
-        if job_name.get().trim().is_empty() {
-            create_error.set(Some("Job name is required.".to_string()));
-            return;
+        // Check every field at once so each error sits on its field.
+        let mut found = FieldErrors::new();
+        if let Err(e) = chronon_backend::validate_job_name(&job_name.get()) {
+            let message = if job_name.get().trim().is_empty() {
+                "Enter a job name.".to_string()
+            } else {
+                e.to_string()
+            };
+            found.push(("job_name".into(), message));
         }
-        if selected_script.get().trim().is_empty() {
-            create_error.set(Some("Please select a script.".to_string()));
-            return;
-        }
-        if matches!(schedule_type.get(), ScheduleType::Cron)
-            && cron_expression.get().trim().is_empty()
-        {
-            create_error.set(Some(
-                "Cron expression is required for cron schedules.".to_string(),
-            ));
-            return;
-        }
-        if matches!(schedule_type.get(), ScheduleType::RunOnce)
-            && run_once_datetime.get().trim().is_empty()
-        {
-            create_error.set(Some(
-                "Run-once datetime is required for run-once schedules.".to_string(),
-            ));
-            return;
-        }
-
         let scripts: Vec<Script> = scripts_res.get().and_then(Result::ok).unwrap_or_default();
-        let script_name = selected_script.get();
-        let script = if let Some(script) = scripts.iter().find(|s| s.name == script_name) {
-            script.clone()
-        } else {
-            create_error.set(Some("Please select a script.".to_string()));
-            return;
-        };
-
-        let values = collect_param_values(&param_signals.get());
-        let params = match build_create_params(&script.params, &values) {
-            Ok(params) => params,
-            Err(err) => {
-                create_error.set(Some(err));
-                return;
+        let script = scripts
+            .iter()
+            .find(|s| s.name == selected_script.get())
+            .cloned();
+        if script.is_none() {
+            found.push(("script".into(), "Choose a script.".into()));
+        }
+        let mut run_once_at = None;
+        match schedule_type.get() {
+            ScheduleType::Cron => {
+                if let Err(e) =
+                    chronon_backend::validate_cron(&cron_expression.get(), &timezone.get())
+                {
+                    let key = if e.field == ScheduleField::Timezone {
+                        "timezone"
+                    } else {
+                        "cron"
+                    };
+                    found.push((key.into(), e.message));
+                }
             }
+            ScheduleType::RunOnce => {
+                match run_once_instant(
+                    &run_once.date.get(),
+                    &run_once.time.get(),
+                    &run_once.timezone.get(),
+                ) {
+                    None => found.push(("run_once".into(), "Pick a date and a time.".into())),
+                    Some(at) if at <= chrono::Utc::now() => {
+                        found.push(("run_once".into(), "Pick a time in the future.".into()));
+                    }
+                    Some(at) => run_once_at = Some(at.to_rfc3339()),
+                }
+            }
+            ScheduleType::Manual => {}
+        }
+        let values = collect_param_values(&param_signals.get());
+        let params = match script
+            .as_ref()
+            .map(|s| build_create_params_by_field(&s.params, &values))
+        {
+            Some(Ok(params)) => {
+                param_errors.set(HashMap::new());
+                params
+            }
+            Some(Err(by_field)) => {
+                // Keep the script's parameter order in the summary.
+                for p in script
+                    .as_ref()
+                    .map(|s| s.params.clone())
+                    .unwrap_or_default()
+                {
+                    if let Some(message) = by_field.get(&p.name) {
+                        found.push((format!("param:{}", p.name), message.clone()));
+                    }
+                }
+                param_errors.set(by_field);
+                serde_json::json!({})
+            }
+            None => serde_json::json!({}),
         };
+        errors.set(found.clone());
+        if !found.is_empty() {
+            return;
+        }
 
         create_loading.set(true);
-        create_error.set(None);
+        let is_cron = matches!(schedule_type.get(), ScheduleType::Cron);
         let payload = CreateJobRequest {
-            job_name: job_name.get(),
+            job_name: job_name.get().trim().to_string(),
             script_name: selected_script.get(),
             schedule_type: match schedule_type.get() {
                 ScheduleType::Cron => CreateJobScheduleType::Cron,
                 ScheduleType::RunOnce => CreateJobScheduleType::RunOnce,
                 ScheduleType::Manual => CreateJobScheduleType::Manual,
             },
-            cron_expr: if matches!(schedule_type.get(), ScheduleType::Cron) {
-                Some(cron_expression.get())
-            } else {
-                None
-            },
-            timezone: if matches!(schedule_type.get(), ScheduleType::Cron) {
-                let tz = timezone.get();
-                if tz.trim().is_empty() {
-                    None
-                } else {
-                    Some(tz)
-                }
-            } else {
-                None
-            },
-            run_once_at: if matches!(schedule_type.get(), ScheduleType::RunOnce) {
-                Some(run_once_datetime.get())
-            } else {
-                None
-            },
+            cron_expr: is_cron.then(|| cron_expression.get()),
+            timezone: is_cron
+                .then(|| timezone.get())
+                .filter(|tz| !tz.trim().is_empty()),
+            run_once_at,
             params,
             concurrency: concurrency.get().parse::<u32>().unwrap_or(1),
             timeout_seconds: timeout_seconds.get().parse::<u32>().unwrap_or(300),
@@ -164,8 +211,11 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
 
         leptos::task::spawn_local_scoped(async move {
             match create_job(payload).await {
-                Ok(_) => navigate_store.with_value(|navigate| {
-                    navigate(crate::paths::JOBS, NavigateOptions::default());
+                Ok(id) => navigate_store.with_value(|navigate| {
+                    navigate(
+                        &format!("{}?created=1", chronon_backend::chronon_job_path(&id)),
+                        NavigateOptions::default(),
+                    );
                 }),
                 Err(err) => create_error.set(Some(err.to_string())),
             }
@@ -173,25 +223,43 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
         });
     });
 
+    let errors_signal = Signal::derive(move || errors.get());
+
     view! {
         <ContentContainer max_width="900px" data_testid="chronon-job-create-page">
             <div id="chronon-job-create-page">
             <Flex vertical=true gap=SpacingSize::Size240.flex_gap()>
-                <div id="chronon-job-create-back">
-                <Button
-                    appearance=ButtonAppearance::Subtle
-                    icon=icondata::AiArrowLeftOutlined
-                    on_click=Callback::new(move |_| {
-                        navigate_store.with_value(|navigate| {
-                            navigate(crate::paths::JOBS, NavigateOptions::default());
-                        });
-                    })
-                >
-                    "Back to Jobs"
-                </Button>
+                <div id="chronon-job-create-back" data-testid="job-create-breadcrumb">
+                    <Breadcrumb>
+                        <BreadcrumbItem>
+                            <a href=crate::paths::JOBS>
+                                <BreadcrumbButton>"Jobs"</BreadcrumbButton>
+                            </a>
+                        </BreadcrumbItem>
+                        <BreadcrumbDivider />
+                        <BreadcrumbItem>
+                            <BreadcrumbButton current=true>"New job"</BreadcrumbButton>
+                        </BreadcrumbItem>
+                    </Breadcrumb>
                 </div>
 
-                <Title3>"Create New Job"</Title3>
+                <Title3>"New job"</Title3>
+
+                <Show when=move || !errors.get().is_empty()>
+                    <div data-testid="create-errors-summary">
+                        <MessageBar intent=MessageBarIntent::Error>
+                            <MessageBarTitle>{move || errors_summary(&errors.get())}</MessageBarTitle>
+                            <MessageBarBody>
+                                {move || errors
+                                    .get()
+                                    .iter()
+                                    .map(|(key, _)| field_label(key))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")}
+                            </MessageBarBody>
+                        </MessageBar>
+                    </div>
+                </Show>
 
                 <Flex vertical=true gap=SpacingSize::Size240.flex_gap()>
                     <div id="chronon-job-create-basic">
@@ -199,6 +267,7 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
                         job_name=job_name
                         selected_script=selected_script
                         scripts_res=scripts_res
+                        errors=errors_signal
                     />
                     </div>
 
@@ -208,6 +277,7 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
                             selected_script=selected_script
                             scripts=scripts.get()
                             param_signals=param_signals
+                            param_errors=param_errors
                         />
                         </div>
                     </Show>
@@ -217,7 +287,9 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
                         schedule_type=schedule_type
                         cron_expression=cron_expression
                         timezone=timezone
-                        run_once_datetime=run_once_datetime
+                        preview=preview
+                        run_once=run_once
+                        errors=errors_signal
                     />
                     </div>
 

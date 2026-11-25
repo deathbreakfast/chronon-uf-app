@@ -1,4 +1,4 @@
-import { test, expect, seedAuth, waitForHydrated } from "./fixtures";
+import { test, expect, seedAuth, waitForHydrated, uniqueJobName } from "./fixtures";
 
 test.describe("pw-chronon-jobs", () => {
   test("pw-chronon-jobs-happy-list-detail", async ({ page }) => {
@@ -10,12 +10,33 @@ test.describe("pw-chronon-jobs", () => {
     await expect(page.getByTestId("chronon-jobs-data-table").getByText(seeded.fixtures.job_name)).toBeVisible({
       timeout: 60_000,
     });
+    const row = page.getByTestId("chronon-jobs-data-table").getByRole("row", {
+      name: new RegExp(seeded.fixtures.job_name),
+    });
+    await expect(row.getByTestId("jobs-schedule-cell")).toContainText("Every hour");
+    await expect(row.getByTestId("jobs-schedule-cell")).toContainText("0 * * * *");
+    await expect(row.getByTestId("jobs-next-run-cell")).toContainText(/UTC|Paused/);
+    await expect(page.getByTestId("jobs-create-button")).toBeVisible();
     await page.goto(`/chronon/jobs/${encodeURIComponent(seeded.fixtures.job_id)}`, {
       waitUntil: "domcontentloaded",
     });
     await waitForHydrated(page);
     await expect(page.getByTestId("chronon-job-detail")).toBeVisible({ timeout: 60_000 });
-    await expect(page.getByTestId("chronon-job-detail").getByText(seeded.fixtures.job_name)).toBeVisible();
+    await expect(page.getByTestId("job-header").getByText(seeded.fixtures.job_name)).toBeVisible({
+      timeout: 60_000,
+    });
+  });
+
+  test("pw-chronon-jobs-sad-outsider-no-owner-or-schedule", async ({ page }) => {
+    const seeded = await seedAuth(page, "outsider");
+    await page.goto(`/chronon/jobs/${encodeURIComponent(seeded.fixtures.job_id)}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await waitForHydrated(page);
+    const caption = page.getByTestId("job-header-caption");
+    await expect(caption).toContainText("Script", { timeout: 60_000 });
+    await expect(caption).not.toContainText("Owner:");
+    await expect(page.getByTestId("schedule-card-sentence")).toHaveText("Hidden");
   });
 
   test("pw-chronon-jobs-sad-unknown-job", async ({ page }) => {
@@ -26,6 +47,7 @@ test.describe("pw-chronon-jobs", () => {
     await waitForHydrated(page);
     await expect(page.getByTestId("chronon-job-detail")).toBeVisible({ timeout: 60_000 });
     await expect(page.getByText("Job not found.")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("job-not-found").getByRole("button", { name: "Back to Jobs" })).toBeVisible();
   });
 
   test("pw-chronon-jobs-sad-unverified-create", async ({ page }) => {
@@ -36,6 +58,39 @@ test.describe("pw-chronon-jobs", () => {
     await expect(
       page.getByTestId("email-verification-required-empty-state"),
     ).toBeAttached({ timeout: 60_000 });
+  });
+});
+
+test.describe("pw-chronon-jobs-create", () => {
+  test("pw-chronon-jobs-sad-create-marks-every-field", async ({ page }) => {
+    await seedAuth(page, "admin");
+    await page.goto("/chronon/jobs/new", { waitUntil: "domcontentloaded" });
+    await waitForHydrated(page);
+    const name = uniqueJobName("e2e-thumbs");
+    await page.getByTestId("job-name").locator("input").fill(name);
+    const select = page.getByTestId("job-script").locator("select");
+    await expect(select.locator('option[value="e2e_thumbnails"]')).toBeAttached({ timeout: 60_000 });
+    await select.selectOption("e2e_thumbnails");
+    await expect(page.getByTestId("param-max_width")).toContainText("Whole number", { timeout: 30_000 });
+    await page.getByTestId("param-max_width").locator("input").fill("wide");
+    await page.getByTestId("create-job").getByRole("button").click();
+
+    await expect(page.getByTestId("create-errors-summary")).toContainText("2 fields need a look", {
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("param-bucket")).toContainText("Enter a value for bucket.");
+    await expect(page.getByTestId("param-max_width")).toContainText(
+      "Enter a whole number, such as 800. You entered wide.",
+    );
+    await expect(page).toHaveURL(/\/chronon\/jobs\/new/);
+
+    await page.getByTestId("param-bucket").locator("input").fill("thumbnails");
+    await page.getByTestId("param-max_width").locator("input").fill("800");
+    await page.getByTestId("create-job").getByRole("button").click();
+    await expect(page).toHaveURL(/\/chronon\/jobs\/[^/?]+\?created=1/, { timeout: 60_000 });
+    await expect(page.getByTestId("job-flash")).toContainText(`${name} first runs`, { timeout: 60_000 });
+    await expect(page.getByTestId("job-params-table")).toContainText("thumbnails");
+    await expect(page.getByTestId("job-params-table")).toContainText("Whole number");
   });
 });
 

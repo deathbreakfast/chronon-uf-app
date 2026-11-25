@@ -66,6 +66,9 @@ fn e2e_echo_invoke(
     Box::pin(async { Ok(()) })
 }
 
+/// Lab script with typed parameters, for the create form's per-field checks.
+pub const E2E_THUMBNAILS_SCRIPT_NAME: &str = "e2e_thumbnails";
+
 fn e2e_script_registry() -> ScriptRegistry {
     let mut registry = ScriptRegistry::new();
     let desc: &'static ScriptDescriptor = Box::leak(Box::new(ScriptDescriptor::new(
@@ -80,6 +83,14 @@ fn e2e_script_registry() -> ScriptRegistry {
         0xe2e0_9a12,
     )));
     registry.register(purge);
+    let thumbnails: &'static ScriptDescriptor =
+        Box::leak(Box::new(ScriptDescriptor::with_signature(
+            E2E_THUMBNAILS_SCRIPT_NAME,
+            e2e_echo_invoke,
+            r#"{"bucket":"String","max_width":"i64"}"#,
+            0x7468_756d_6273,
+        )));
+    registry.register(thumbnails);
     registry
 }
 
@@ -91,6 +102,16 @@ struct LocalBackend {
 }
 
 impl LocalBackend {
+    /// Records a revision the way the Chronon store does on every saved change.
+    fn append_revision(&self, job: &Job, changed_by: serde_json::Value) {
+        let snapshot = serde_json::to_value(job).unwrap_or_default();
+        let revision = JobRevision::new(&job.job_id, job.current_revision, changed_by, snapshot);
+        self.revisions
+            .lock()
+            .expect("revisions lock")
+            .push((job.job_id.clone(), revision));
+    }
+
     fn store_job(&self, job: Job) {
         let mut jobs = self.jobs.lock().expect("local backend lock");
         if let Some(existing) = jobs
@@ -127,6 +148,10 @@ impl ChrononCoordinatorBackend for LocalBackend {
 
     async fn upsert_job_with_valence(&self, valence: &Valence, mut job: Job) -> ChrononResult<()> {
         snapshot_job_actor_from_valence(&mut job, valence)?;
+        if self.get_job(&job.job_id).await.is_none() {
+            job.current_revision = job.current_revision.max(1);
+            self.append_revision(&job, job.actor_json.clone());
+        }
         self.store_job(job);
         Ok(())
     }
@@ -225,8 +250,17 @@ impl ChrononCoordinatorBackend for LocalBackend {
         job_id: &str,
         updated: Job,
     ) -> ChrononResult<()> {
-        let _ = job_id;
-        self.upsert_job_with_valence(valence, updated).await
+        // Like the Chronon store: the owner stays, the revision counts up, and the
+        // revision records who saved it.
+        let mut updated = updated;
+        if let Some(existing) = self.get_job(job_id).await {
+            updated.actor_json = existing.actor_json;
+            updated.current_revision = existing.current_revision + 1;
+        }
+        let changed_by = chronon_coordinator::snapshot_actor_json(valence)?;
+        self.append_revision(&updated, changed_by);
+        self.store_job(updated);
+        Ok(())
     }
 
     async fn run_now(&self, job_id: &str) -> ChrononResult<String> {

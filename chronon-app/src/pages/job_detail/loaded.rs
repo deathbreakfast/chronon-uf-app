@@ -1,24 +1,55 @@
 //! Loaded job detail body (extracted to keep the page orchestrator small).
 
+use std::collections::HashMap;
+
 use leptos::prelude::*;
+use leptos_router::hooks::{use_location, use_navigate, use_query_map};
+use leptos_router::NavigateOptions;
+use orbital::components::{Caption1, SpacingSize};
+use orbital::primitives::{
+    Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, Flex, MessageBar,
+    MessageBarBody, MessageBarIntent, Tab, TabList,
+};
 
 use super::actions::{
-    make_cancel_callback, make_edit_callback, make_save_callback, open_run_now, restore_form_state,
-    JobDetailDefaults, JobDetailFormState,
+    make_cancel_callback, make_edit_callback, make_save_callback, open_run_now, JobDetailFormState,
 };
 use super::components::{
-    FailingBanner, JobDetailHeader, JobDetailHeaderInput, JobEditForm, JobEditFormInput,
-    JobInfoCard, JobInfoCardInput, JobRecentRuns, RunNowDialog, RunNowDialogInput, RunStarted,
-    RunStartedNotice,
+    FailingBanner, JobDetailHeader, JobEditForm, JobInfoCard, JobRecentRuns, PauseDialog,
+    PausedBanner, RunNowDialog, RunNowDialogInput, RunStarted, RunStartedNotice, ScheduleCard,
+    ScheduleDialog,
 };
-use super::display::{
-    display_timezone as format_timezone, normalized_params, pretty_json, snapshot_params,
-    snapshot_string,
-};
+use super::display::{created_message, param_signals_for_edit};
 use crate::live::{
     chronon_run_event_is_status, chronon_run_event_matches_job, ChrononJobRunSubscription,
 };
-use crate::server::{effective_job_pool, get_job, Job, JobRevision, JobStatus, Script};
+use crate::server::{
+    effective_job_pool, get_job, get_job_access, get_job_pause_info, ChrononJobAccess, Job,
+    PauseInfo, Script,
+};
+
+/// Shared state every job-page section reads.
+#[derive(Clone, Copy)]
+pub(super) struct JobPageCtx {
+    /// Latest copy of the job; replaced after saves and live status events.
+    pub job: RwSignal<Job>,
+    /// What the signed-in person may do.
+    pub access: RwSignal<ChrononJobAccess>,
+    /// Success message shown above the Schedule card.
+    pub flash: RwSignal<Option<String>>,
+    /// Who paused the job, when it's paused.
+    pub pause_info: RwSignal<Option<PauseInfo>>,
+    /// Reloads `job` (and pause details) from the server.
+    pub refresh: Callback<()>,
+    /// Opens the Edit schedule dialog.
+    pub schedule_dialog_open: RwSignal<bool>,
+    /// Opens the Pause or Resume confirmation.
+    pub pause_dialog_open: RwSignal<bool>,
+    /// Switches Configuration into its edit form.
+    pub is_editing: RwSignal<bool>,
+}
+
+const TABS: [&str; 3] = ["overview", "runs", "history"];
 
 /// Reactive body for a successfully loaded job.
 #[allow(clippy::too_many_lines)]
@@ -26,201 +57,65 @@ use crate::server::{effective_job_pool, get_job, Job, JobRevision, JobStatus, Sc
 pub(super) fn JobDetailLoaded(
     /// Loaded job DTO.
     job: Job,
-    /// Job resource (for refetch after save).
-    job_res: Resource<Result<Option<Job>, ServerFnError>>,
-    /// Revisions resource.
-    revisions_res: Resource<Result<Vec<JobRevision>, ServerFnError>>,
-    /// Scripts catalog resource (run-now params prompt).
+    /// Scripts catalog resource (parameter types, run-now params prompt).
     scripts_res: Resource<Result<Vec<Script>, ServerFnError>>,
     /// Live run subscription handle for this page.
     live: ChrononJobRunSubscription,
     /// Bumped when live events arrive for this job.
     runs_refresh_signal: Signal<u32>,
 ) -> impl IntoView {
-    let job_name = job.name.clone();
-    let job_cron = job.cron.clone();
-    let job_script = job.script_name.clone();
-    let job_timezone = job.timezone.clone().unwrap_or_default();
-    let job_params = normalized_params(&job.params);
-    let job_pool = effective_job_pool(job.pool.as_deref()).to_string();
-    let job_enabled_init = job.status == JobStatus::Active;
-    let defaults = JobDetailDefaults {
-        name: job_name.clone(),
-        cron: job_cron.clone(),
-        timezone: job_timezone.clone(),
-        params: job_params.clone(),
-        enabled: job_enabled_init,
-        pool: job_pool.clone(),
-    };
-    let defaults_store = StoredValue::new(defaults.clone());
-    let job_id_for_state = job.id.clone();
-    let job_id_for_run = job.id.clone();
-    let job_revision_from_server = job.revision;
+    let job_id = job.id.clone();
+    let query = use_query_map();
+    let created = query.with_untracked(|q| q.get("created").is_some());
+    let flash = RwSignal::new(created.then(|| created_message(&job)));
+    let job_sig = RwSignal::new(job);
+    let access = RwSignal::new(ChrononJobAccess::default());
+    let pause_info = RwSignal::new(None::<PauseInfo>);
 
-    // ── Edit mode state ─────────────────────────
-    let is_editing = RwSignal::new(false);
-
-    // ── Form state ──────────────────────────────
-    let form = JobDetailFormState {
-        job_name: RwSignal::new(job_name.clone()),
-        cron: RwSignal::new(job_cron.clone()),
-        timezone: RwSignal::new(job_timezone.clone()),
-        enabled: RwSignal::new(job_enabled_init),
-        params: RwSignal::new(job_params.clone()),
-        params_str: RwSignal::new(pretty_json(&job_params)),
-        pool: RwSignal::new(job_pool.clone()),
-    };
-    let form_job_name = form.job_name;
-    let form_cron = form.cron;
-    let form_timezone = form.timezone;
-    let form_enabled = form.enabled;
-    let form_params = form.params;
-    let form_params_str = form.params_str;
-    let form_pool = form.pool;
-
-    // Sync textarea string -> form_params JSON value
-    Effect::new(move || {
-        let text = form_params_str.get();
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            form_params.set(serde_json::json!({}));
-        } else if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
-            form_params.set(val);
-        }
-    });
-
-    // ── Revision selector state ─────────────────
-    let latest_revision_num = Memo::new(move |_| {
-        revisions_res
-            .get()
-            .and_then(|result| {
-                result
-                    .ok()
-                    .and_then(|revisions| revisions.iter().map(|r| r.revision_number).max())
-            })
-            .unwrap_or(job_revision_from_server)
-    });
-
-    let selected_revision_num = RwSignal::new(job_revision_from_server);
-    let revision_str = RwSignal::new(job_revision_from_server.to_string());
-
-    // When revisions refresh, default to the latest revision
     Effect::new(move |_| {
-        let latest = latest_revision_num.get();
-        selected_revision_num.set(latest);
-        revision_str.set(latest.to_string());
-    });
-
-    // When user changes revision via Select, sync and handle side effects
-    let form_for_revision_restore = form.clone();
-    Effect::new(move || {
-        let val = revision_str.get();
-        if let Ok(num) = val.parse::<u32>() {
-            selected_revision_num.set(num);
-            let latest = latest_revision_num.get_untracked();
-            if num < latest {
-                is_editing.set(false);
-                defaults_store.with_value(|defaults| {
-                    restore_form_state(&form_for_revision_restore, defaults);
-                });
+        leptos::task::spawn_local_scoped(async move {
+            if let Ok(a) = get_job_access().await {
+                access.set(a);
             }
-        }
+        });
     });
 
-    let is_viewing_old_revision = Memo::new(move |_| {
-        let latest = latest_revision_num.get();
-        selected_revision_num.get() < latest
+    // Pause details follow the job's status and revision.
+    let pause_key = Memo::new(move |_| job_sig.with(|j| (j.id.clone(), j.status, j.revision)));
+    Effect::new(move |_| {
+        let (id, _, _) = pause_key.get();
+        leptos::task::spawn_local_scoped(async move {
+            if let Ok(info) = get_job_pause_info(id).await {
+                pause_info.set(info);
+            }
+        });
     });
 
-    // ── Display memos (snapshot or current) ─────
-    let selected_snapshot = Memo::new(move |_| {
-        let rev_num = selected_revision_num.get();
-        revisions_res.get().and_then(|result| {
-            result.ok().and_then(|revisions| {
-                revisions
-                    .into_iter()
-                    .find(|r| r.revision_number == rev_num)
-                    .map(|r| r.snapshot_json)
-            })
-        })
+    let refresh_id = StoredValue::new(job_id.clone());
+    let refresh = Callback::new(move |()| {
+        let id = refresh_id.get_value();
+        leptos::task::spawn_local_scoped(async move {
+            if let Ok(Some(job)) = get_job(id).await {
+                job_sig.set(job);
+            }
+        });
     });
 
-    let display_job_name = Memo::new(move |_| {
-        if is_editing.get() {
-            form_job_name.get()
-        } else if let Some(snapshot) = selected_snapshot.get() {
-            snapshot_string(&snapshot, "job_name").unwrap_or_else(|| job_name.clone())
-        } else {
-            job_name.clone()
-        }
-    });
+    let is_editing = RwSignal::new(false);
+    let ctx = JobPageCtx {
+        job: job_sig,
+        access,
+        flash,
+        pause_info,
+        refresh,
+        schedule_dialog_open: RwSignal::new(false),
+        pause_dialog_open: RwSignal::new(false),
+        is_editing,
+    };
 
-    let display_script_name = Memo::new(move |_| {
-        selected_snapshot.get().map_or_else(
-            || job_script.clone(),
-            |snapshot| {
-                snapshot_string(&snapshot, "script_name").unwrap_or_else(|| job_script.clone())
-            },
-        )
-    });
-
-    // Mirror Memo into RwSignal for Thaw Input binding (readonly field)
-    let script_display_signal = RwSignal::new(display_script_name.get_untracked());
-    Effect::new(move || {
-        script_display_signal.set(display_script_name.get());
-    });
-
-    let display_cron = Memo::new(move |_| {
-        if is_editing.get() {
-            form_cron.get()
-        } else if let Some(snapshot) = selected_snapshot.get() {
-            snapshot_string(&snapshot, "cron_expr").unwrap_or_else(|| job_cron.clone())
-        } else {
-            job_cron.clone()
-        }
-    });
-
-    let display_timezone = Memo::new(move |_| {
-        if is_editing.get() {
-            format_timezone(&form_timezone.get())
-        } else if let Some(snapshot) = selected_snapshot.get() {
-            snapshot_string(&snapshot, "timezone").unwrap_or_else(|| "UTC".to_string())
-        } else {
-            format_timezone(&job_timezone)
-        }
-    });
-
-    let display_pool = Memo::new(move |_| {
-        if is_editing.get() {
-            form_pool.get()
-        } else if let Some(snapshot) = selected_snapshot.get() {
-            effective_job_pool(snapshot_string(&snapshot, "pool").as_deref()).to_string()
-        } else {
-            job_pool.clone()
-        }
-    });
-
-    let job_params_for_display = job_params;
-    let display_params = Memo::new(move |_| {
-        if is_editing.get() {
-            form_params.get()
-        } else if let Some(snapshot) = selected_snapshot.get() {
-            snapshot_params(&snapshot).unwrap_or_else(|| job_params_for_display.clone())
-        } else {
-            job_params_for_display.clone()
-        }
-    });
-
-    let last_run = RwSignal::new(
-        job.last_run_at
-            .clone()
-            .unwrap_or_else(|| "Never".to_string()),
-    );
-    let next_run = RwSignal::new(job.next_run_at.unwrap_or_else(|| "\u{2014}".to_string()));
-    let enabled_signal = RwSignal::new(job_enabled_init);
-
+    // Live status events change Last run / Next run.
     let live_store = StoredValue::new(live);
-    let job_id_for_status = job_id_for_run.clone();
+    let job_id_for_status = job_id.clone();
     Effect::new(move |_| {
         let live = live_store.get_value();
         let _ = live.trigger.get();
@@ -228,127 +123,176 @@ pub(super) fn JobDetailLoaded(
             if chronon_run_event_matches_job(&ev, &job_id_for_status)
                 && chronon_run_event_is_status(&ev)
             {
-                let id = job_id_for_status.clone();
-                leptos::task::spawn_local_scoped(async move {
-                    if let Ok(Some(job)) = get_job(id).await {
-                        last_run.set(
-                            job.last_run_at
-                                .clone()
-                                .unwrap_or_else(|| "Never".to_string()),
-                        );
-                        next_run.set(job.next_run_at.unwrap_or_else(|| "\u{2014}".to_string()));
-                    }
-                });
+                refresh.run(());
             }
         }
     });
 
-    // ── Action state ────────────────────────────
+    // ── Tabs (kept in ?tab=) ────────────────────
+    let tab = RwSignal::new(
+        query
+            .with_untracked(|q| q.get("tab"))
+            .filter(|t| TABS.contains(&t.as_str()))
+            .unwrap_or_else(|| "overview".to_string()),
+    );
+    let navigate = use_navigate();
+    let location = use_location();
+    Effect::new(move |prev: Option<String>| {
+        let current = tab.get();
+        if prev.as_ref().is_some_and(|p| p != &current) {
+            let path = location.pathname.get_untracked();
+            navigate(
+                &format!("{path}?tab={current}"),
+                NavigateOptions {
+                    replace: true,
+                    scroll: false,
+                    ..Default::default()
+                },
+            );
+        }
+        current
+    });
+
+    // ── Configuration edit form ─────────────────
+    let initial = job_sig.get_untracked();
+    let form = JobDetailFormState {
+        job_name: RwSignal::new(initial.name.clone()),
+        pool: RwSignal::new(effective_job_pool(initial.pool.as_deref()).to_string()),
+        params: RwSignal::new(HashMap::default()),
+        param_errors: RwSignal::new(HashMap::default()),
+    };
+    let script_params = Memo::new(move |_| {
+        let script_name = job_sig.with(|j| j.script_name.clone());
+        scripts_res
+            .get()
+            .and_then(Result::ok)
+            .and_then(|scripts| scripts.into_iter().find(|s| s.name == script_name))
+            .map(|s| s.params)
+            .unwrap_or_default()
+    });
+    let save_loading = RwSignal::new(false);
+    let save_error = RwSignal::new(None::<String>);
+    let on_edit = make_edit_callback(ctx, form, save_error, move || {
+        param_signals_for_edit(
+            &script_params.get_untracked(),
+            &job_sig.get_untracked().params,
+        )
+    });
+    let on_save = make_save_callback(ctx, form, script_params, save_loading, save_error);
+    let on_cancel = make_cancel_callback(ctx, save_error);
+
+    // ── Run now ─────────────────────────────────
     let run_now_loading = RwSignal::new(false);
     let run_now_error = RwSignal::new(None::<String>);
     let run_now_dialog_open = RwSignal::new(false);
     let run_started = RwSignal::new(None::<RunStarted>);
-    // The Run now dialog loads the script's parameters itself.
-    let _ = scripts_res;
-
-    let save_loading = RwSignal::new(false);
-    let save_error = RwSignal::new(None::<String>);
-
-    let run_now_disabled = Memo::new(move |_| {
-        run_now_loading.get() || is_viewing_old_revision.get() || is_editing.get()
-    });
-
-    // ── Action callbacks ────────────────────────
+    let run_now_disabled = Memo::new(move |_| run_now_loading.get() || is_editing.get());
     let on_run_now = Callback::new(move |_: leptos::ev::MouseEvent| {
         run_now_error.set(None);
         open_run_now(run_now_dialog_open, run_now_loading);
     });
-    let on_edit = make_edit_callback(form.clone(), defaults.clone(), save_error, is_editing);
-    let job_refetch = Callback::new(move |()| job_res.refetch());
-    let revisions_refetch = Callback::new(move |()| revisions_res.refetch());
-    let on_save = make_save_callback(
-        job_id_for_state,
-        form.clone(),
-        save_loading,
-        save_error,
-        is_editing,
-        job_refetch,
-        revisions_refetch,
-    );
-    let on_cancel = make_cancel_callback(form, defaults, save_error, is_editing);
 
-    // ── Build props structs ──────────────────
-    let header_props = JobDetailHeaderInput {
-        display_job_name,
-        job_status: job.status,
-        revisions_res,
-        latest_revision_num,
-        revision_str,
-        is_viewing_old_revision,
-        is_editing,
-        enabled_signal,
-        run_now_loading,
-        run_now_error,
-        run_now_disabled,
-        on_run_now,
-        save_loading,
-        save_error,
-        on_save,
-        on_cancel,
-        on_edit,
-    };
-
-    let edit_form_props = JobEditFormInput {
-        form_job_name,
-        script_display_signal,
-        form_cron,
-        form_timezone,
-        form_params_str,
-        form_enabled,
-        form_pool,
-    };
-
-    let info_card_props = JobInfoCardInput {
-        display_script_name,
-        display_cron,
-        display_timezone,
-        display_pool,
-        display_params,
-        last_run,
-        next_run,
-    };
-
-    // ── Render sub-components ───────────────────
-    let job_id_for_runs = job.id;
+    let job_id_overview = job_id.clone();
+    let job_id_banner = job_id.clone();
+    let job_id_for_dialog = job_id.clone();
+    let job_id_runs = job_id;
+    let job_name = Signal::derive(move || job_sig.with(|j| j.name.clone()));
 
     view! {
-        <JobDetailHeader props=header_props />
-        <RunStartedNotice notice=run_started />
-        <FailingBanner job_id=job_id_for_runs.clone() refresh_signal=runs_refresh_signal />
+        <Flex vertical=true gap=SpacingSize::Size160.flex_gap()>
+            <div data-testid="job-breadcrumb">
+                <Breadcrumb>
+                    <BreadcrumbItem>
+                        <a href=crate::paths::JOBS>
+                            <BreadcrumbButton>"Jobs"</BreadcrumbButton>
+                        </a>
+                    </BreadcrumbItem>
+                    <BreadcrumbDivider />
+                    <BreadcrumbItem>
+                        <BreadcrumbButton current=true>{job_name}</BreadcrumbButton>
+                    </BreadcrumbItem>
+                </Breadcrumb>
+            </div>
+
+            <JobDetailHeader
+                ctx=ctx
+                run_now_loading=run_now_loading
+                run_now_error=run_now_error
+                run_now_disabled=run_now_disabled
+                on_run_now=on_run_now
+                on_edit=on_edit
+            />
+
+            <RunStartedNotice notice=run_started />
+
+            <div data-testid="job-tabs">
+                <TabList selected_value=tab>
+                    <Tab value="overview">"Overview"</Tab>
+                    <Tab value="runs">"Runs"</Tab>
+                    <Tab value="history">"History"</Tab>
+                </TabList>
+            </div>
+
+            // Panels stay mounted and are hidden, so switching tabs never reloads them.
+            <div data-testid="job-tab-overview" hidden=move || tab.get() != "overview">
+                <Flex vertical=true gap=SpacingSize::Size160.flex_gap()>
+                    <Show when=move || flash.get().is_some()>
+                        <div data-testid="job-flash">
+                            <MessageBar intent=MessageBarIntent::Success>
+                                <MessageBarBody>{move || flash.get().unwrap_or_default()}</MessageBarBody>
+                            </MessageBar>
+                        </div>
+                    </Show>
+                    <FailingBanner job_id=job_id_banner refresh_signal=runs_refresh_signal />
+                    <PausedBanner ctx=ctx />
+                    <ScheduleCard ctx=ctx />
+                    <div data-testid="job-overview-recent-runs">
+                        <Show when=move || tab.get() != "runs">
+                            <JobRecentRuns job_id=job_id_overview.clone() refresh_signal=runs_refresh_signal />
+                        </Show>
+                    </div>
+                    <Show
+                        when=move || is_editing.get()
+                        fallback=move || view! { <JobInfoCard ctx=ctx script_params=script_params on_edit=on_edit /> }
+                    >
+                        <JobEditForm
+                            form=form
+                            ctx=ctx
+                            script_params=script_params
+                            save_loading=save_loading
+                            save_error=save_error
+                            on_save=on_save
+                            on_cancel=on_cancel
+                        />
+                    </Show>
+                </Flex>
+            </div>
+            <div data-testid="job-tab-runs" hidden=move || tab.get() != "runs">
+                // Mounted only on this tab, so the page never holds two runs cards.
+                <Show when=move || tab.get() == "runs">
+                    <JobRecentRuns
+                        job_id=job_id_runs.clone()
+                        refresh_signal=runs_refresh_signal
+                        show_filters=true
+                    />
+                </Show>
+            </div>
+            <div data-testid="job-tab-history" hidden=move || tab.get() != "history">
+                <Caption1>"Revision history for this job will appear here."</Caption1>
+            </div>
+        </Flex>
+
         <RunNowDialog
             props=RunNowDialogInput {
                 open: run_now_dialog_open,
-                job_id: job_id_for_run,
-                job_name: job.name,
+                job_id: job_id_for_dialog,
+                job_name: job_sig.with_untracked(|j| j.name.clone()),
                 initial_params: Signal::derive(|| None),
                 loading: run_now_loading,
                 on_started: Callback::new(move |started| run_started.set(Some(started))),
             }
         />
-
-        <Show when=move || is_editing.get() fallback=|| ()>
-            <JobEditForm form=edit_form_props />
-        </Show>
-
-        <Show when=move || !is_editing.get() fallback=|| ()>
-            <JobInfoCard display=info_card_props />
-        </Show>
-
-        <Show when=move || !is_editing.get() fallback=|| ()>
-            <JobRecentRuns
-                job_id=job_id_for_runs.clone()
-                refresh_signal=runs_refresh_signal
-            />
-        </Show>
+        <ScheduleDialog ctx=ctx />
+        <PauseDialog ctx=ctx />
     }
 }

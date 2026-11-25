@@ -19,6 +19,14 @@ fn sample_job(name: &str, script: &str, status: JobStatus) -> Job {
         timezone: None,
         params: serde_json::json!({}),
         pool: None,
+        schedule_text: String::new(),
+        last_run_attempts: None,
+        owner_label: String::new(),
+        system_owned: false,
+        concurrency: 1,
+        timeout_ms: None,
+        retry_max_attempts: 0,
+        retry_base_delay_ms: 0,
     }
 }
 
@@ -346,7 +354,8 @@ fn backend_job_to_job_maps_enabled_manual_happy_path() {
     backend.current_revision = 3;
     let job = backend_job_to_job(backend);
     assert_eq!(job.name, "nightly");
-    assert_eq!(job.cron, "manual");
+    assert_eq!(job.cron, "");
+    assert_eq!(job.schedule_text, "Manual");
     assert_eq!(job.status, JobStatus::Active);
     assert_eq!(job.revision, 3);
 }
@@ -578,6 +587,7 @@ fn apply_update_payload_to_job_normalizes_null_params_happy_path() {
         params: serde_json::Value::Null,
         enabled: false,
         pool: None,
+        expected_revision: None,
     };
     let updated = apply_update_payload_to_job(existing, &payload).expect("update");
     assert_eq!(updated.job_name, "new-name");
@@ -693,6 +703,7 @@ fn apply_update_payload_blank_pool_resets_to_default_sad() {
         params: serde_json::json!({}),
         enabled: true,
         pool: Some("   ".into()),
+        expected_revision: None,
     };
     let updated = apply_update_payload_to_job(existing, &payload).expect("update");
     assert_eq!(updated.pool, None);
@@ -710,6 +721,7 @@ fn apply_update_payload_omitted_pool_keeps_stored_happy_path() {
         params: serde_json::json!({}),
         enabled: true,
         pool: None,
+        expected_revision: None,
     };
     let updated = apply_update_payload_to_job(existing, &payload).expect("update");
     assert_eq!(updated.pool.as_deref(), Some("chronon-mve-a"));

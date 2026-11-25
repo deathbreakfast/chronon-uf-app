@@ -11,5 +11,5 @@ pub use actions::ActionsSection;
 pub use advanced_options::AdvancedOptionsSection;
 pub use basic_info::BasicInfoSection;
 pub use form_section_card::FormSectionCard;
-pub use parameters::ParametersSection;
-pub use schedule::ScheduleSection;
+pub use parameters::{ParametersSection, TypedParamFields};
+pub use schedule::{RunOnceFields, ScheduleSection};

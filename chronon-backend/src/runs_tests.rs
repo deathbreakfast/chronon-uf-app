@@ -177,6 +177,14 @@ fn fill_last_run_sets_time_and_status() {
         timezone: None,
         params: json!({}),
         pool: None,
+        schedule_text: String::new(),
+        last_run_attempts: None,
+        owner_label: String::new(),
+        system_owned: false,
+        concurrency: 1,
+        timeout_ms: None,
+        retry_max_attempts: 0,
+        retry_base_delay_ms: 0,
     };
     crate::fill_last_run(&mut job, &failed_purge());
     assert_eq!(

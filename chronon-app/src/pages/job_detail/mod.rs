@@ -12,18 +12,18 @@ mod skeleton;
 use skeleton::JobDetailPageSkeleton;
 
 use leptos::prelude::*;
-use orbital::components::ContentContainer;
-use orbital::primitives::{MessageBar, MessageBarIntent};
+use leptos_router::components::A;
+use orbital::components::{ContentContainer, EmptyState, EmptyStateCallToAction};
+use orbital::primitives::{Button, ButtonAppearance, MessageBar, MessageBarIntent};
 
 use crate::live::{chronon_job_run_subscription, ChrononJobRunLiveSource};
-use crate::server::{get_job, get_job_revisions, get_scripts};
+use crate::server::{get_job, get_scripts};
 use loaded::JobDetailLoaded;
 
 /// Job detail page — orchestrator.
 ///
-/// Owns all resources and shared signals, then delegates rendering to focused
-/// sub-components: `JobDetailHeader`, `JobEditForm`, `JobInfoCard`, and
-/// `JobRecentRuns`.
+/// Loads the job once per `job_id` and hands it to `JobDetailLoaded`, which keeps its
+/// own copy and reloads it after saves, so tabs, dialogs and messages never remount.
 #[component]
 pub fn ChrononJobDetailPage() -> impl IntoView {
     let params = leptos_router::hooks::use_params_map();
@@ -31,8 +31,6 @@ pub fn ChrononJobDetailPage() -> impl IntoView {
 
     let job_res = Resource::new(job_id, |id| async move { get_job(id).await });
     let scripts_res = Resource::new(|| (), |()| async { get_scripts().await });
-
-    let revisions_res = Resource::new(job_id, |id| async move { get_job_revisions(id).await });
 
     let live = chronon_job_run_subscription();
     let runs_refresh = RwSignal::new(0u32);
@@ -72,8 +70,6 @@ pub fn ChrononJobDetailPage() -> impl IntoView {
                         Ok(Some(job)) => view! {
                             <JobDetailLoaded
                                 job=job
-                                job_res=job_res
-                                revisions_res=revisions_res
                                 scripts_res=scripts_res
                                 live=live
                                 runs_refresh_signal=runs_refresh_signal
@@ -81,9 +77,21 @@ pub fn ChrononJobDetailPage() -> impl IntoView {
                         }
                         .into_any(),
                         Ok(None) => view! {
-                            <MessageBar intent=MessageBarIntent::Warning>
-                                "Job not found."
-                            </MessageBar>
+                            <div data-testid="job-not-found">
+                                <EmptyState
+                                    message="Job not found."
+                                    description="It may have been deleted, or the link has a typo."
+                                    icon=icondata::AiSearchOutlined
+                                >
+                                    <EmptyStateCallToAction slot:call_to_action>
+                                        <A href=crate::paths::JOBS>
+                                            <Button appearance=ButtonAppearance::Primary>
+                                                "Back to Jobs"
+                                            </Button>
+                                        </A>
+                                    </EmptyStateCallToAction>
+                                </EmptyState>
+                            </div>
                         }
                         .into_any(),
                         Err(err) => view! {

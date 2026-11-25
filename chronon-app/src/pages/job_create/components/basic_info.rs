@@ -1,11 +1,13 @@
 use leptos::prelude::*;
 use orbital::components::Subtitle2;
 use orbital::primitives::{
-    Grid, GridConfig, GridItem, Input, InputAppearance, Label, MessageBar, MessageBarIntent,
+    Field, Grid, GridConfig, GridItem, Input, InputAppearance, MessageBar, MessageBarIntent,
     Select, Skeleton, SkeletonItem,
 };
 use turf::inline_style_sheet_values;
 
+use crate::components::FieldErrorSlot;
+use crate::pages::job_create::form_state::{error_for, FieldErrors};
 use crate::server::Script;
 
 use super::FormSectionCard;
@@ -34,7 +36,11 @@ pub fn BasicInfoSection(
     selected_script: RwSignal<String>,
     /// Resource that loads the scripts data.
     scripts_res: Resource<Result<Vec<Script>, ServerFnError>>,
+    /// Field errors from the last Create attempt.
+    errors: Signal<FieldErrors>,
 ) -> impl IntoView {
+    let name_error = Signal::derive(move || error_for(&errors.get(), "job_name"));
+    let script_error = Signal::derive(move || error_for(&errors.get(), "script"));
     let (style_sheet, class_names) = inline_style_sheet_values! {
         .SectionTitle {
             margin-bottom: 16px;
@@ -63,19 +69,20 @@ pub fn BasicInfoSection(
             <Subtitle2 block=true class=class_names.section_title>"Basic Information"</Subtitle2>
             <Grid config=GridConfig::with_gaps(1, 0, 16)>
                 <GridItem>
-                    <div class=class_names.form_field>
-                        <Label required=true>"Job Name"</Label>
-                        <div data-testid="job-name">
-                            <Input appearance=InputAppearance::with_placeholder("e.g., daily-cleanup")
+                    <div data-testid="job-name">
+                        <Field label="Job name" required=true>
+                            <Input appearance=InputAppearance::with_placeholder("e.g., nightly-thumbnails")
                                 bind=job_name
                             />
-                        </div>
+                            <FieldErrorSlot error=name_error />
+                        </Field>
                     </div>
                 </GridItem>
 
                 <GridItem>
-                    <div class=class_names.form_field>
-                        <Label required=true>"Script"</Label>
+                    <div class=class_names.form_field data-testid="job-script">
+                        <Field label="Script" required=true>
+                        <FieldErrorSlot error=script_error />
                         <Transition fallback=move || view! { <ScriptSelectSkeleton /> }>
                             {move || scripts_res.get().map(|r| match r {
                                 Ok(scripts) => {
@@ -128,6 +135,7 @@ pub fn BasicInfoSection(
                                 }.into_any(),
                             })}
                         </Transition>
+                        </Field>
                     </div>
                 </GridItem>
             </Grid>
