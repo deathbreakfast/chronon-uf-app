@@ -24,39 +24,39 @@ pub fn ChrononJobHeaderHelp() -> impl IntoView {
     )
 }
 
-/// Revision selector.
+/// Schedule card.
 #[help_spotlight_step(
     route = "/chronon/jobs/:job_id",
-    feature_highlight = "chronon-job-revision",
-    title = "Revisions",
-    spotlight = "chronon-job-detail-revision",
+    feature_highlight = "chronon-job-schedule",
+    title = "Schedule",
+    spotlight = "chronon-job-detail-schedule",
     position = "bottom",
     order = 20
 )]
 #[component]
-pub fn ChrononJobRevisionHelp() -> impl IntoView {
+pub fn ChrononJobScheduleHelp() -> impl IntoView {
     help_stack(
-        "help-step-chronon-job-revision",
-        "Each successful Save keeps a snapshot. Pick an older revision to read what the Job looked like then. Older revisions are read-only.",
+        "help-step-chronon-job-schedule",
+        "The schedule in words, in the Job's timezone, with its next runs. Edit schedule shows the runs before and after a change.",
         None,
         &[],
     )
 }
 
-/// Enabled toggle.
+/// Pause or Resume.
 #[help_spotlight_step(
     route = "/chronon/jobs/:job_id",
-    feature_highlight = "chronon-job-enabled",
-    title = "Armed or paused",
-    spotlight = "chronon-job-detail-enabled",
+    feature_highlight = "chronon-job-pause",
+    title = "Pause or resume",
+    spotlight = "chronon-job-detail-pause",
     position = "bottom",
     order = 30
 )]
 #[component]
-pub fn ChrononJobEnabledHelp() -> impl IntoView {
+pub fn ChrononJobPauseHelp() -> impl IntoView {
     help_stack(
-        "help-step-chronon-job-enabled",
-        "When enabled, Chronon follows the schedule. When paused, automatic runs stop until you turn it back on. Persist changes with Save when you are editing.",
+        "help-step-chronon-job-pause",
+        "Pause stops scheduled runs until someone resumes the Job. Runs skipped while paused aren't made up. Each change saves a revision.",
         None,
         &[],
     )
@@ -75,7 +75,7 @@ pub fn ChrononJobEnabledHelp() -> impl IntoView {
 pub fn ChrononJobRunNowHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-job-run-now",
-        "Starts one attempt immediately without waiting for the clock. A dialog may let you override parameters for this attempt only. Needs Chronon admin.",
+        "Starts one attempt now without waiting for the schedule. A dialog may let you override parameters for this attempt only.",
         None,
         &[],
     )
@@ -94,7 +94,7 @@ pub fn ChrononJobRunNowHelp() -> impl IntoView {
 pub fn ChrononJobEditHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-job-edit",
-        "Edit switches this page into a form so you can change schedule, parameters, or enabled state. Save and Cancel appear after Edit.",
+        "Edit opens a form for the name, worker pool and parameters. Save and Cancel appear after Edit.",
         None,
         &[],
     )
@@ -151,14 +151,12 @@ pub fn ChrononJobCancelEditHelp() -> impl IntoView {
 pub fn ChrononJobConfigHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-job-config",
-        "Read-only snapshot of the selected revision.",
+        "How this Job runs.",
         None,
         &[
             "Script: recipe this Job runs",
-            "Schedule: cron, run once, or manual",
-            "Timezone: clock used for cron / run once",
+            "Worker pool, runs at once, timeout and retries",
             "Parameters: values passed into the Script",
-            "Last / Next: most recent and upcoming attempt",
         ],
     )
 }

@@ -311,7 +311,9 @@ fn detail_pages_testid_and_bindings_happy_path() {
     }
 
     let job = read_app("pages/job_detail/mod.rs");
-    for needle in ["chronon-job-detail", "get_job", "get_job_revisions"] {
+    // Revisions moved off the job page header (History tab); the page loads the job
+    // and the scripts catalog.
+    for needle in ["chronon-job-detail", "get_job", "get_scripts"] {
         assert!(
             job.contains(needle),
             "ChrononJobDetailPage missing `{needle}`"

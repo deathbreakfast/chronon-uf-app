@@ -12,6 +12,9 @@
 //! - **Job/run/schedule mapping** — Builds UI DTOs from coordinator jobs and runs and applies
 //!   cron or run-once schedules on create, without performing Chronon IO.
 //!   [Get started](#map-job-run-schedule)
+//! - **Schedule sentences and previews** — Describes any five- or six-field cron in plain
+//!   English with [`describe`], lists upcoming runs with [`next_runs`] (the Chronon scheduler's
+//!   own math), and names the bad field in a [`FieldError`]. [Get started](#schedule-sentences)
 //! - **Dashboard aggregates** — Provides KPI counters for jobs and today's runs via
 //!   [`dashboard_stats_from_jobs_and_runs`]. [Get started](#dashboard-kpis)
 //! - **Ops path encoding** — Builds percent-encoded path segments for `/chronon` hrefs via
@@ -134,6 +137,25 @@
 //! ));
 //! ```
 //!
+//! ## Schedule sentences
+//!
+//! The ops UI shows every schedule as a sentence in the job's timezone, with its next runs.
+//! [`describe`] builds the sentence, [`next_runs`] asks `chronon_scheduler::CronExpr` for the
+//! upcoming times, and [`validate_cron`] reports the first wrong field so a form can mark it.
+//!
+//! ```rust
+//! use chrono::{TimeZone, Utc};
+//! use chronon_backend::{describe, next_runs, validate_cron, ScheduleField};
+//!
+//! assert_eq!(describe("0 3 * * *", "UTC").unwrap(), "Every day at 03:00 UTC");
+//! let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+//! assert_eq!(next_runs("0 3 * * *", "UTC", from, 3).len(), 3);
+//! assert_eq!(
+//!     validate_cron("0 3 * * *", "Mars/Olympus").unwrap_err().field,
+//!     ScheduleField::Timezone
+//! );
+//! ```
+//!
 //! ## Dashboard KPIs
 //!
 //! Dashboard aggregates package job counts and today's run outcomes into a single
@@ -213,6 +235,14 @@
 //!     timezone: Some("UTC".into()),
 //!     params: serde_json::json!({"token": "secret"}),
 //!     pool: None,
+//!     schedule_text: "Every hour".into(),
+//!     last_run_attempts: None,
+//!     owner_label: String::new(),
+//!     system_owned: false,
+//!     concurrency: 1,
+//!     timeout_ms: None,
+//!     retry_max_attempts: 0,
+//!     retry_base_delay_ms: 0,
 //! };
 //! let redacted = redact_job_params_for_non_admin(job, false);
 //! assert_eq!(redacted.params, serde_json::json!({}));
@@ -277,15 +307,18 @@ pub use runs::{
     when_words, RunGroup, RunResultFilter, RunTimeFilter, RunsTableFilters,
 };
 pub use schedule::{
-    apply_create_schedule, apply_update_payload_to_job, build_create_job_model,
-    parse_run_once_datetime, recompute_next_run_for_cron, ChrononScheduleError,
+    actor_label, apply_create_schedule, apply_update_payload_to_job, build_create_job_model,
+    describe, describe_run_once, is_system_actor, next_runs, parse_run_once_datetime,
+    pause_info_from_revisions, preview_schedule_at, recompute_next_run_for_cron, revision_conflict,
+    schedule_text_for_job, validate_cron, ChrononScheduleError, FieldError, PauseInfo,
+    ScheduleField, SchedulePreview, MANUAL_SCHEDULE_TEXT,
 };
 pub use types::{
     CreateJobRequest, CreateJobScheduleType, DashboardChartPoint, DashboardChartSeries,
     DashboardStats, DayResult, Job, JobRevision, JobStatus, JobWeek, JobWeekDay, LastRunFailure,
     RecentRun, Run, RunAttempt, RunDetail, RunNowFacts, RunStatus, RunSummary, Script, ScriptParam,
-    StartedBy, UpdateJobRequest, JOBS_PAGE_SIZE, JOB_RUNS_PAGE_SIZE, RUNS_PAGE_SIZE,
-    SCRIPTS_PAGE_SIZE,
+    StartedBy, UpdateJobOutcome, UpdateJobRequest, JOBS_PAGE_SIZE, JOB_RUNS_PAGE_SIZE,
+    RUNS_PAGE_SIZE, SCRIPTS_PAGE_SIZE,
 };
 pub use validate::{
     chronon_job_path, chronon_run_path, encode_ops_path_segment, validate_job_id,

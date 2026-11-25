@@ -30,6 +30,7 @@ icondata_core.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+chrono-tz = "0.10"
 
 orbital-data = { workspace = true }
 orbital-charts = { workspace = true, default-features = false }

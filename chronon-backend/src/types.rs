@@ -90,6 +90,30 @@ pub struct Job {
     /// Worker pool the job's runs are claimed from; `None` means [`crate::DEFAULT_POOL`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool: Option<String>,
+    /// Plain-English schedule: a cron sentence, `Once on …`, or `Manual`.
+    #[serde(default)]
+    pub schedule_text: String,
+    /// Attempts the last run took, when it was retried.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run_attempts: Option<u32>,
+    /// Display label for the job's owner (the actor that saved it).
+    #[serde(default)]
+    pub owner_label: String,
+    /// True when the job belongs to the platform System actor (schedule-only).
+    #[serde(default)]
+    pub system_owned: bool,
+    /// Runs allowed at once.
+    #[serde(default)]
+    pub concurrency: u32,
+    /// Per-run timeout in milliseconds, if set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    /// Retry attempts after a failure.
+    #[serde(default)]
+    pub retry_max_attempts: u32,
+    /// Delay before the first retry, in milliseconds.
+    #[serde(default)]
+    pub retry_base_delay_ms: u64,
 }
 
 /// Run DTO consumed by Chronon UI pages.
@@ -358,6 +382,31 @@ pub struct UpdateJobRequest {
     /// [`crate::DEFAULT_POOL`].
     #[serde(default)]
     pub pool: Option<String>,
+    /// Revision the editor opened; a newer stored revision makes the save a conflict.
+    #[serde(default)]
+    pub expected_revision: Option<u32>,
+}
+
+/// Result of saving a job configuration change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateJobOutcome {
+    /// The change was saved as `revision`.
+    Saved {
+        /// Revision number the save produced.
+        revision: u32,
+        /// Next scheduled run after the save (RFC 3339), if any.
+        next_run_at: Option<String>,
+    },
+    /// Someone saved a newer revision after the editor opened the job; nothing was written.
+    Conflict {
+        /// Latest stored revision number.
+        revision: u32,
+        /// Display label for who saved it.
+        by: String,
+        /// RFC 3339 time it was saved.
+        at: String,
+    },
 }
 
 /// Schedule kind chosen when creating a new job.

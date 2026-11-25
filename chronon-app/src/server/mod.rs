@@ -35,8 +35,9 @@ mod types;
 
 pub use dashboard::{get_dashboard_stats, get_recent_runs, get_run_stats_series};
 pub use jobs::{
-    create_job, get_job, get_job_revisions, get_jobs, get_jobs_page, list_chronon_job_pools,
-    update_job,
+    can_create_job, can_edit_job, can_run_job, create_job, get_job, get_job_access,
+    get_job_pause_info, get_job_revisions, get_jobs, get_jobs_page, list_chronon_job_pools,
+    preview_schedule, set_job_paused, update_job, ChrononJobAccess,
 };
 pub use runs::{
     get_job_runs_page, get_job_week, get_run, get_run_attempts, get_run_detail, get_run_now_facts,

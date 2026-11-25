@@ -24,6 +24,14 @@ fn sample_job(name: &str, script: &str, status: JobStatus) -> Job {
         timezone: None,
         params: serde_json::json!({}),
         pool: None,
+        schedule_text: String::new(),
+        last_run_attempts: None,
+        owner_label: String::new(),
+        system_owned: false,
+        concurrency: 1,
+        timeout_ms: None,
+        retry_max_attempts: 0,
+        retry_base_delay_ms: 0,
     }
 }
 

@@ -24,7 +24,7 @@ pub fn ChrononCreateIntroHelp() -> impl IntoView {
     )
 }
 
-/// Back to Jobs link.
+/// Breadcrumb back to Jobs.
 #[help_spotlight_step(
     route = "/chronon/jobs/new",
     feature_highlight = "chronon-create-back",
@@ -37,7 +37,7 @@ pub fn ChrononCreateIntroHelp() -> impl IntoView {
 pub fn ChrononCreateBackHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-create-back",
-        "Returns to the Jobs list without creating anything. Use this if you opened Create by mistake.",
+        "Jobs in the breadcrumb returns to the list without creating anything.",
         None,
         &[],
     )
@@ -97,12 +97,12 @@ pub fn ChrononCreateParamsHelp() -> impl IntoView {
 pub fn ChrononCreateScheduleHelp() -> impl IntoView {
     help_stack(
         "help-step-chronon-create-schedule",
-        "Pick how the alarm fires. Choosing a type shows the fields that type needs.",
+        "Pick when the Job runs. Each choice shows the fields it needs.",
         None,
         &[
-            "Cron: repeats on a clock pattern + timezone",
-            "Run once: one datetime, then done",
-            "Manual: only when someone presses Run Now",
+            "On a schedule: repeats, shown in words with its first runs",
+            "Once: one date and time, then done",
+            "Only from Run now: runs when someone starts it",
         ],
     )
 }

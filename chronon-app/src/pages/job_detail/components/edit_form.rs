@@ -1,109 +1,97 @@
+use leptos::ev;
 use leptos::prelude::*;
-use orbital::components::{Card, CardHeader, FormHint, SpacingSize, Subtitle2};
+use orbital::components::{Card, CardHeader, SpacingSize, Subtitle2};
 use orbital::primitives::{
-    Flex, Input, InputAppearance, Label, Switch, Textarea, TextareaAppearance, TextareaResize,
+    Button, ButtonAppearance, Field, Flex, Input, InputAppearance, MessageBar, MessageBarIntent,
 };
 use turf::inline_style_sheet_values;
 
 use crate::components::JobPoolSelect;
+use crate::pages::job_create::components::TypedParamFields;
+use crate::server::ScriptParam;
 
-/// Consolidated input for `JobEditForm`.
-#[derive(Clone, Copy)]
-pub struct JobEditFormInput {
-    /// Two-way bound job name
-    pub form_job_name: RwSignal<String>,
-    /// Read-only script name (mirrored into `RwSignal` for Input binding)
-    pub script_display_signal: RwSignal<String>,
-    /// Two-way bound cron expression
-    pub form_cron: RwSignal<String>,
-    /// Two-way bound timezone
-    pub form_timezone: RwSignal<String>,
-    /// Two-way bound parameters JSON string
-    pub form_params_str: RwSignal<String>,
-    /// Two-way bound enabled state
-    pub form_enabled: RwSignal<bool>,
-    /// Two-way bound worker pool id
-    pub form_pool: RwSignal<String>,
-}
+use super::super::actions::JobDetailFormState;
+use super::super::loaded::JobPageCtx;
 
-/// Edit form card for modifying job configuration.
+/// Edit form for the job's name, worker pool and parameters (one typed field each).
 ///
-/// Shown when the user enters edit mode. Uses a `Card` with `CardHeader`
-/// and `Flex` layout for form fields.
+/// The schedule changes through Edit schedule and the state through Pause or Resume.
 #[component]
 pub fn JobEditForm(
     /// Form state.
-    form: JobEditFormInput,
+    form: JobDetailFormState,
+    /// Shared page state.
+    ctx: JobPageCtx,
+    /// The script's declared parameters.
+    script_params: Memo<Vec<ScriptParam>>,
+    /// Save in progress.
+    save_loading: RwSignal<bool>,
+    /// Save error, if any.
+    save_error: RwSignal<Option<String>>,
+    /// Save click.
+    on_save: Callback<ev::MouseEvent>,
+    /// Cancel click.
+    on_cancel: Callback<ev::MouseEvent>,
 ) -> impl IntoView {
-    let JobEditFormInput {
-        form_job_name,
-        script_display_signal,
-        form_cron,
-        form_timezone,
-        form_params_str,
-        form_enabled,
-        form_pool,
-    } = form;
-
-    let params_textarea_appearance = TextareaAppearance {
-        placeholder: MaybeProp::from("{}"),
-        resize: Signal::from(TextareaResize::Vertical),
-        ..Default::default()
-    };
-
+    let script_name = RwSignal::new(ctx.job.with_untracked(|j| j.script_name.clone()));
     let (style_sheet, class_names) = inline_style_sheet_values! {
-        .JobDetailCard {
-            width: 100%;
-            max-width: 100%;
-            margin: 0 0 24px 0;
-            box-sizing: border-box;
-        }
-
         .Content {
             padding: 0 16px 16px 16px;
         }
-
     };
 
     view! {
         <style>{style_sheet}</style>
-        <Card class=class_names.job_detail_card>
+        <div data-testid="job-edit-form">
+        <Card>
             <CardHeader>
-                <Subtitle2>"Edit Job"</Subtitle2>
+                <Subtitle2>"Edit configuration"</Subtitle2>
             </CardHeader>
             <Flex vertical=true gap=SpacingSize::Size160.flex_gap() class=class_names.content>
-                <Flex vertical=true gap=SpacingSize::Size60.flex_gap()>
-                    <Label>"Job Name"</Label>
-                    <Input bind=form_job_name />
-                </Flex>
-                <Flex vertical=true gap=SpacingSize::Size60.flex_gap()>
-                    <Label>"Script"</Label>
-                    <Input appearance=InputAppearance { disabled: Signal::from(true), ..Default::default() } bind=script_display_signal  />
-                </Flex>
-                <Flex vertical=true gap=SpacingSize::Size60.flex_gap()>
-                    <Label>"Cron Expression"</Label>
-                    <Input bind=form_cron />
-                </Flex>
-                <Flex vertical=true gap=SpacingSize::Size60.flex_gap()>
-                    <Label>"Timezone"</Label>
-                    <Input appearance=InputAppearance::with_placeholder("UTC") bind=form_timezone />
-                </Flex>
-                <Flex vertical=true gap=SpacingSize::Size60.flex_gap()>
-                    <Label>"Worker pool"</Label>
-                    <JobPoolSelect pool=form_pool testid="job-edit-pool" />
-                </Flex>
-                <Flex vertical=true gap=SpacingSize::Size60.flex_gap()>
-                    <Label>"Parameters (JSON)"</Label>
-                    <Textarea bind=form_params_str appearance=params_textarea_appearance />
-                    <FormHint>
-                        "Enter parameters as JSON object (e.g., {\"key\": \"value\"})"
-                    </FormHint>
-                </Flex>
-                <Flex vertical=true gap=SpacingSize::Size60.flex_gap()>
-                    <Label>"Enabled"</Label>
-                    <Switch bind=form_enabled />
+                <Field label="Job name">
+                    <Input bind=form.job_name />
+                </Field>
+                <Field label="Script">
+                    <Input
+                        appearance=InputAppearance { disabled: Signal::from(true), ..Default::default() }
+                        bind=script_name
+                    />
+                </Field>
+                <Field label="Worker pool">
+                    <JobPoolSelect pool=form.pool testid="job-edit-pool" />
+                </Field>
+                <TypedParamFields
+                    params=Signal::derive(move || script_params.get())
+                    values=form.params
+                    errors=form.param_errors
+                />
+                <Show when=move || save_error.get().is_some()>
+                    <MessageBar intent=MessageBarIntent::Error>
+                        {move || save_error.get().unwrap_or_default()}
+                    </MessageBar>
+                </Show>
+                <Flex gap=SpacingSize::Size120.flex_gap()>
+                    <div id="chronon-job-detail-save" data-testid="save-job-button">
+                        <Button
+                            appearance=ButtonAppearance::Primary
+                            disabled=save_loading
+                            on_click=Callback::new(move |e| on_save.run(e))
+                        >
+                            {move || if save_loading.get() { "Saving..." } else { "Save" }}
+                        </Button>
+                    </div>
+                    <div id="chronon-job-detail-cancel" data-testid="cancel-edit-button">
+                        <Button
+                            appearance=ButtonAppearance::Secondary
+                            disabled=save_loading
+                            on_click=Callback::new(move |e| on_cancel.run(e))
+                        >
+                            "Cancel"
+                        </Button>
+                    </div>
                 </Flex>
             </Flex>
         </Card>
+        </div>
     }
 }

@@ -136,14 +136,14 @@ const CHRONON_HELP_STEPS_SEEN = [
   },
   {
     route: "/chronon/jobs/:job_id",
-    feature_highlight: "chronon-job-revision",
-    spotlight: "chronon-job-detail-revision",
+    feature_highlight: "chronon-job-schedule",
+    spotlight: "chronon-job-detail-schedule",
     replay: false,
   },
   {
     route: "/chronon/jobs/:job_id",
-    feature_highlight: "chronon-job-enabled",
-    spotlight: "chronon-job-detail-enabled",
+    feature_highlight: "chronon-job-pause",
+    spotlight: "chronon-job-detail-pause",
     replay: false,
   },
   {
@@ -414,3 +414,25 @@ export async function expectMutationDenied(page: Page) {
 
 export const test = base;
 export { expect };
+
+/** Unique job name per test run so parallel lanes never share a job. */
+export function uniqueJobName(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+}
+
+/** Creates a job through the New job form (default: every day at 03:00 UTC) and waits for its page. */
+export async function createJobViaForm(
+  page: Page,
+  name: string,
+  script = "e2e_echo",
+): Promise<void> {
+  await page.goto("/chronon/jobs/new", { waitUntil: "domcontentloaded" });
+  await waitForHydrated(page);
+  await page.getByTestId("job-name").locator("input").fill(name);
+  const select = page.getByTestId("job-script").locator("select");
+  await expect(select.locator(`option[value="${script}"]`)).toBeAttached({ timeout: 60_000 });
+  await select.selectOption(script);
+  await page.getByTestId("create-job").getByRole("button").click();
+  await expect(page).toHaveURL(/\/chronon\/jobs\/[^/?]+\?created=1/, { timeout: 60_000 });
+  await expect(page.getByTestId("job-header")).toBeVisible({ timeout: 60_000 });
+}

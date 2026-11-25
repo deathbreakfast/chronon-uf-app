@@ -1,14 +1,65 @@
 use std::collections::HashMap;
 
 use leptos::prelude::*;
-use orbital::components::{Caption1, Caption2};
-use orbital::primitives::{Grid, GridConfig, GridItem, Input, Label};
+use orbital::components::{Caption1, Caption2, FormHint, SpacingSize};
+use orbital::primitives::{Field, Flex, Input, Switch};
 use turf::inline_style_sheet_values;
 
-use crate::components::ChrononHelpSectionHeader;
-use crate::server::Script;
+use crate::components::{ChrononHelpSectionHeader, FieldErrorSlot};
+use crate::pages::job_create::form_state::param_type_words;
+use crate::server::{Script, ScriptParam};
 
 use super::FormSectionCard;
+
+/// One typed field per script parameter: the type in words, its error on the field,
+/// and a Switch for yes-or-no values.
+#[component]
+pub fn TypedParamFields(
+    /// Declared parameters, in order.
+    #[prop(into)]
+    params: Signal<Vec<ScriptParam>>,
+    /// Field text per parameter name (`"true"` / `"false"` for yes-or-no).
+    values: RwSignal<HashMap<String, RwSignal<String>>>,
+    /// Error per parameter name.
+    errors: RwSignal<HashMap<String, String>>,
+) -> impl IntoView {
+    view! {
+        <Flex vertical=true gap=SpacingSize::Size160.flex_gap()>
+            {move || {
+                params
+                    .get()
+                    .into_iter()
+                    .filter_map(|param| {
+                        let name = param.name.clone();
+                        let signal = values.with(|m| m.get(&name).copied())?;
+                        let words = param_type_words(&param.param_type);
+                        let error_name = name.clone();
+                        let error = Signal::derive(move || errors.with(|e| e.get(&error_name).cloned()));
+                        let control = if param.param_type == "bool" {
+                            let on = RwSignal::new(signal.get_untracked() == "true");
+                            if signal.get_untracked().is_empty() {
+                                signal.set("false".to_string());
+                            }
+                            Effect::new(move |_| signal.set(on.get().to_string()));
+                            view! { <Switch bind=on /> }.into_any()
+                        } else {
+                            view! { <Input bind=signal /> }.into_any()
+                        };
+                        Some(view! {
+                            <div data-testid=format!("param-{name}")>
+                                <Field label=name.clone() required=param.required>
+                                    {control}
+                                    <FieldErrorSlot error=error />
+                                </Field>
+                                <FormHint>{words}</FormHint>
+                            </div>
+                        })
+                    })
+                    .collect_view()
+            }}
+        </Flex>
+    }
+}
 
 /// Parameter editor for the currently selected script.
 #[component]
@@ -19,18 +70,10 @@ pub fn ParametersSection(
     scripts: Vec<Script>,
     /// Two-way signal holding the param signals.
     param_signals: RwSignal<HashMap<String, RwSignal<String>>>,
+    /// Error per parameter name.
+    param_errors: RwSignal<HashMap<String, String>>,
 ) -> impl IntoView {
     let (style_sheet, class_names) = inline_style_sheet_values! {
-        .SectionTitle {
-            margin-bottom: 16px;
-        }
-
-        .FormField {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
         .Muted {
             color: var(--colorNeutralForeground3);
         }
@@ -48,52 +91,25 @@ pub fn ParametersSection(
                 if script.params.is_empty() {
                     view! {
                         <FormSectionCard>
-                            <ChrononHelpSectionHeader
-                                title="Parameters"
-                                info=view! {
-                                    <Caption1>
-                                        "This script accepts no parameters. Values are passed to the script as JSON when the job runs."
-                                    </Caption1>
-                                }.into_any()
-                            />
+                            <ChrononHelpSectionHeader title="Parameters" />
                             <Caption2 italic=true class=class_names.muted>
                                 "This script has no parameters."
                             </Caption2>
                         </FormSectionCard>
                     }.into_any()
                 } else {
+                    let params = script.params;
                     view! {
                         <FormSectionCard>
-                            <ChrononHelpSectionHeader
-                                title="Parameters"
-                                info=view! {
-                                    <Caption1>
-                                        "Values are coerced to the script parameter types and stored with the job. Required parameters must be filled before creating the job."
-                                    </Caption1>
-                                }.into_any()
+                            <ChrononHelpSectionHeader title="Parameters" />
+                            <TypedParamFields
+                                params=Signal::derive(move || params.clone())
+                                values=param_signals
+                                errors=param_errors
                             />
-                            <Grid config=GridConfig::with_gaps(1, 0, 16)>
-                                {script.params.iter().filter_map(|param| {
-                                    let param_name = param.name.clone();
-                                    let param_type = param.param_type.clone();
-                                    let is_required = param.required;
-                                    let test_id = format!("param-{param_name}");
-                                    let signal = param_signals.with(|m| m.get(&param_name).copied())?;
-
-                                    Some(view! {
-                                        <GridItem>
-                                            <div class=class_names.form_field>
-                                                <Label required=is_required>
-                                                    {param_name.clone()} " (" {param_type} ")"
-                                                </Label>
-                                                <div data-testid=test_id>
-                                                    <Input bind=signal />
-                                                </div>
-                                            </div>
-                                        </GridItem>
-                                    })
-                                }).collect_view()}
-                            </Grid>
+                            <Caption1>
+                                "Values are stored with the job. Anyone who can view the job can read them."
+                            </Caption1>
                         </FormSectionCard>
                     }.into_any()
                 }

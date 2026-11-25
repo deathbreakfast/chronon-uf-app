@@ -3,9 +3,11 @@ mod fetcher;
 mod mapper;
 
 use leptos::prelude::*;
+use leptos_router::components::A;
 use leptos_router::hooks::use_navigate;
 use leptos_router::NavigateOptions;
-use orbital::components::{MessageBar, MessageBarIntent};
+use orbital::components::{EmptyState, EmptyStateCallToAction, MessageBar, MessageBarIntent};
+use orbital::primitives::{Button, ButtonAppearance, Flex};
 use orbital::primitives::{
     DataTable, DataTableEmptyView, DataTableEvents, DataTableFeatures, DataTableHeaderChromeConfig,
     DataTableNoResultsView, DataTableSource, DataTableToolbarConfig, PagingMode,
@@ -17,7 +19,11 @@ use fetcher::{build_jobs_fetcher, JOBS_TABLE_PAGE_SIZE};
 
 /// Jobs list DataTable with search, filters, and table layout.
 #[component]
-pub fn JobsDataTable() -> impl IntoView {
+pub fn JobsDataTable(
+    /// Whether the empty state offers Create job.
+    #[prop(into)]
+    can_create: Signal<bool>,
+) -> impl IntoView {
     let navigate = use_navigate();
 
     let on_row_click = Callback::new(move |(id,): (String,)| {
@@ -67,9 +73,26 @@ pub fn JobsDataTable() -> impl IntoView {
                 }
             >
                 <DataTableEmptyView slot>
-                    <MessageBar intent=MessageBarIntent::Info>
-                        "No jobs configured yet. Create your first job to get started."
-                    </MessageBar>
+                    <div data-testid="jobs-empty-state">
+                        <EmptyState
+                            message="No jobs yet"
+                            description="A job runs one of your scripts on a schedule, once at a set time, or only when someone uses Run now."
+                            icon=icondata::AiClockCircleOutlined
+                        >
+                            <EmptyStateCallToAction slot:call_to_action>
+                                <Flex gap=orbital::components::SpacingSize::Size120.flex_gap()>
+                                    <Show when=move || can_create.get()>
+                                        <A href=crate::paths::JOBS_NEW>
+                                            <Button appearance=ButtonAppearance::Primary>"Create job"</Button>
+                                        </A>
+                                    </Show>
+                                    <A href=crate::paths::SCRIPTS>
+                                        <Button appearance=ButtonAppearance::Secondary>"See scripts"</Button>
+                                    </A>
+                                </Flex>
+                            </EmptyStateCallToAction>
+                        </EmptyState>
+                    </div>
                 </DataTableEmptyView>
                 <DataTableNoResultsView slot>
                     <MessageBar intent=MessageBarIntent::Info>

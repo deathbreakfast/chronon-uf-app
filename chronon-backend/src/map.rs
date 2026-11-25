@@ -2,16 +2,31 @@
 
 use chronon_core::{Job as CoreJob, Run as CoreRun, RunStatus as CoreRunStatus};
 
+use crate::schedule::{actor_label, is_system_actor, schedule_text_for_job};
 use crate::types::{Job, JobStatus, RecentRun, Run, RunStatus, ScriptParam};
 
 /// Maps a core Chronon job onto the UI-facing job DTO.
 #[must_use]
 pub fn backend_job_to_job(j: CoreJob) -> Job {
+    let schedule_text = schedule_text_for_job(&j);
+    let owner_label = actor_label(&j.actor_json);
+    let system_owned = is_system_actor(&j.actor_json);
+    let retry_u64 = |key: &str| {
+        j.retry_policy_json
+            .get(key)
+            .and_then(serde_json::Value::as_u64)
+    };
+    let retry_max_attempts = retry_u64("max_attempts")
+        .and_then(|n| u32::try_from(n).ok())
+        .unwrap_or(0);
+    let retry_base_delay_ms = retry_u64("base_delay_ms").unwrap_or(0);
+    let concurrency = u32::try_from(j.concurrency).unwrap_or(1);
+    let timeout_ms = j.timeout_ms.and_then(|t| u64::try_from(t).ok());
     Job {
         id: j.job_id,
         name: j.job_name,
         script_name: j.script_name,
-        cron: j.cron_expr.unwrap_or_else(|| "manual".to_string()),
+        cron: j.cron_expr.unwrap_or_default(),
         status: if j.enabled {
             JobStatus::Active
         } else {
@@ -25,6 +40,14 @@ pub fn backend_job_to_job(j: CoreJob) -> Job {
         timezone: j.timezone,
         params: j.params_json,
         pool: j.pool,
+        schedule_text,
+        last_run_attempts: None,
+        owner_label,
+        system_owned,
+        concurrency,
+        timeout_ms,
+        retry_max_attempts,
+        retry_base_delay_ms,
     }
 }
 
