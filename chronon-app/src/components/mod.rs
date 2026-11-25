@@ -15,4 +15,4 @@ pub use job_pool_select::JobPoolSelect;
 pub use job_status_badge::JobStatusBadge;
 pub use jobs_data_table::JobsDataTable;
 pub use run_status_badge::RunStatusBadge;
-pub use runs_data_table::{RunsDataTable, RunsTableChrome, RunsTableScope};
+pub use runs_data_table::{RunsDataTable, RunsTableChrome, RunsTableFilterState, RunsTableScope};

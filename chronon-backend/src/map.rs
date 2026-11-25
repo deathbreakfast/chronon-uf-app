@@ -18,12 +18,28 @@ pub fn backend_job_to_job(j: CoreJob) -> Job {
             JobStatus::Paused
         },
         revision: u32::try_from(j.current_revision).unwrap_or(u32::MAX),
-        // TODO: Populate from run lookup once run-store hydration is wired.
+        // Filled from the job's runs by `fill_last_run`.
         last_run_at: None,
+        last_run_status: None,
         next_run_at: j.next_run_at.map(|dt| dt.to_rfc3339()),
         timezone: j.timezone,
         params: j.params_json,
         pool: j.pool,
+    }
+}
+
+/// Fills `last_run_at` and `last_run_status` from the job's newest run, retries folded in.
+///
+/// `runs` may hold other jobs' runs; only this job's are read.
+pub fn fill_last_run(job: &mut Job, runs: &[CoreRun]) {
+    let own: Vec<CoreRun> = runs
+        .iter()
+        .filter(|r| r.job_id.as_deref() == Some(job.id.as_str()))
+        .cloned()
+        .collect();
+    if let Some((at, status)) = crate::runs::last_run_of(&own) {
+        job.last_run_at = Some(at);
+        job.last_run_status = Some(status);
     }
 }
 

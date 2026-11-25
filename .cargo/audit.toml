@@ -5,4 +5,7 @@
 # RUSTSEC-2026-0459: libsqlite3-sys 0.30.1 comes in through sqlx-sqlite 0.8.6
 # from uf-valence-backend-sqlite. The fix (libsqlite3-sys >=0.39) needs sqlx
 # 0.9 in the Valence SQL backends; drop this ignore once that lands.
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0459"]
+# RUSTSEC-2026-0543 / RUSTSEC-2026-0555: chrono and chrono-tz unmaintained, no
+# fixed release; temporary until the stack moves off chrono
+# (security:RUSTSEC-2026-0543, security:RUSTSEC-2026-0555).
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0459", "RUSTSEC-2026-0543", "RUSTSEC-2026-0555"]

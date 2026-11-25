@@ -8,9 +8,9 @@ use crate::components::RunStatusBadge;
 use crate::RunStatus;
 
 pub fn runs_table_columns(show_job_column: bool) -> Vec<DataTableColumnDef> {
-    let status_view = Arc::new(|record: DataRecord| {
+    let result_view = Arc::new(|record: DataRecord| {
         let label = record
-            .get("status")
+            .get("result")
             .map(orbital_data::DataValue::display_string)
             .unwrap_or_default();
         let status = match label.as_str() {
@@ -28,12 +28,14 @@ pub fn runs_table_columns(show_job_column: bool) -> Vec<DataTableColumnDef> {
         cols.push(DataTableColumnDef::new("job_name", "Job").with_sortable(false));
     }
     cols.push(
-        DataTableColumnDef::new("status", "Status")
+        DataTableColumnDef::new("result", "Result")
             .with_col_type(ColumnType::SingleSelect)
             .with_sortable(false)
-            .with_cell_view(status_view),
+            .with_cell_view(result_view),
     );
+    cols.push(DataTableColumnDef::new("attempts", "Attempts").with_sortable(false));
     cols.push(DataTableColumnDef::new("started_at", "Started").with_sortable(false));
-    cols.push(DataTableColumnDef::new("duration_ms", "Duration").with_sortable(false));
+    cols.push(DataTableColumnDef::new("duration", "Duration").with_sortable(false));
+    cols.push(DataTableColumnDef::new("started_by", "Started by").with_sortable(false));
     cols
 }

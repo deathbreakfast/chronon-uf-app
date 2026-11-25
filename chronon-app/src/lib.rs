@@ -306,12 +306,14 @@ pub use pages::{
 };
 // Types, permission const, and server fn stubs (WASM-safe client stubs + SSR bodies).
 pub use server::{
-    create_job, get_dashboard_stats, get_job, get_job_revisions, get_job_runs_page, get_jobs,
-    get_jobs_page, get_recent_runs, get_run, get_run_stats_series, get_runs, get_runs_page,
+    create_job, get_dashboard_stats, get_job, get_job_revisions, get_job_runs_page, get_job_week,
+    get_jobs, get_jobs_page, get_recent_runs, get_run, get_run_attempts, get_run_detail,
+    get_run_now_facts, get_run_stats_series, get_runs, get_runs_caption, get_runs_page,
     get_scripts, get_scripts_page, list_chronon_job_pools, run_job_now, update_job,
     ChrononPoolPickRow, ChrononPoolProvider, DashboardChartPoint, DashboardChartSeries,
-    DashboardStats, Job, JobRevision, JobStatus, RecentRun, Run, RunStatus, Script, ScriptParam,
-    UpdateJobRequest, CHRONON_ADMIN_PERMISSION,
+    DashboardStats, Job, JobRevision, JobStatus, JobWeek, RecentRun, Run, RunAttempt, RunDetail,
+    RunNowFacts, RunStatus, RunSummary, Script, ScriptParam, StartedBy, UpdateJobRequest,
+    CHRONON_ADMIN_PERMISSION,
 };
 
 // Define the Chronon application metadata.

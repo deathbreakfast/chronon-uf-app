@@ -58,6 +58,7 @@ mod tests {
             status: JobStatus::Active,
             revision: 1,
             last_run_at: None,
+            last_run_status: None,
             next_run_at: Some("2026-01-02T00:00:00Z".into()),
             timezone: Some("UTC".into()),
             params: serde_json::json!({"token": "secret", "bucket": "prod"}),

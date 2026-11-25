@@ -47,6 +47,11 @@ pub async fn seed_data(
             "job_id": fixtures.job_id,
             "job_name": fixtures.job_name,
             "run_id": fixtures.run_id,
+            "purge_job_id": fixtures.purge_job_id,
+            "purge_job_name": fixtures.purge_job_name,
+            "purge_run_id": fixtures.purge_run_id,
+            "params_job_id": fixtures.params_job_id,
+            "params_job_name": fixtures.params_job_name,
         }
     })))
 }

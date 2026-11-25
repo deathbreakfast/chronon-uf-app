@@ -40,6 +40,11 @@ pub struct FixtureIds {
     pub job_id: String,
     pub job_name: String,
     pub run_id: String,
+    pub purge_job_id: String,
+    pub purge_job_name: String,
+    pub purge_run_id: String,
+    pub params_job_id: String,
+    pub params_job_name: String,
 }
 
 static E2E_STATE: OnceLock<Arc<E2eState>> = OnceLock::new();
@@ -47,6 +52,12 @@ static E2E_STATE: OnceLock<Arc<E2eState>> = OnceLock::new();
 /// Lab script name registered into the in-process registry.
 pub const E2E_SCRIPT_NAME: &str = "e2e_echo";
 pub const E2E_JOB_NAME: &str = "e2e-nightly";
+/// Lab script with one integer parameter, for typed Run now fields.
+pub const E2E_PURGE_SCRIPT_NAME: &str = "e2e_purge";
+/// Job whose newest run failed on all four attempts.
+pub const E2E_PURGE_JOB_NAME: &str = "e2e-session-purge";
+/// Job with a stored `older_than_days: 30` that Run now specs run by hand.
+pub const E2E_PARAMS_JOB_NAME: &str = "e2e-weekly-export";
 
 fn e2e_echo_invoke(
     _ctx: Box<dyn ScriptContext>,
@@ -62,6 +73,13 @@ fn e2e_script_registry() -> ScriptRegistry {
         e2e_echo_invoke,
     )));
     registry.register(desc);
+    let purge: &'static ScriptDescriptor = Box::leak(Box::new(ScriptDescriptor::with_signature(
+        E2E_PURGE_SCRIPT_NAME,
+        e2e_echo_invoke,
+        r#"{"older_than_days":"i64"}"#,
+        0xe2e0_9a12,
+    )));
+    registry.register(purge);
     registry
 }
 
@@ -220,6 +238,16 @@ impl ChrononCoordinatorBackend for LocalBackend {
         job_id: &str,
         params_override: Option<serde_json::Value>,
     ) -> ChrononResult<String> {
+        self.run_now_with_params_and_actor(job_id, params_override, None)
+            .await
+    }
+
+    async fn run_now_with_params_and_actor(
+        &self,
+        job_id: &str,
+        params_override: Option<serde_json::Value>,
+        actor_override: Option<serde_json::Value>,
+    ) -> ChrononResult<String> {
         let job = self
             .get_job(job_id)
             .await
@@ -231,7 +259,7 @@ impl ChrononCoordinatorBackend for LocalBackend {
         run.started_at = Some(now);
         run.finished_at = Some(now);
         run.duration_ms = Some(15);
-        run.actor_json = job.actor_json.clone();
+        run.actor_json = actor_override.unwrap_or_else(|| job.actor_json.clone());
         run.params_json = params_override.unwrap_or(job.params_json);
         let run_id = run.run_id.clone();
         self.store_run(run);
@@ -385,9 +413,10 @@ async fn grant_chronon_admin(admin_ctx: &Valence, user_id: &str) {
 }
 
 async fn bootstrap_chronon_fixtures(
-    coordinator: &dyn ChrononCoordinatorBackend,
+    local: &LocalBackend,
     valence: &Valence,
 ) -> anyhow::Result<FixtureIds> {
+    let coordinator: &dyn ChrononCoordinatorBackend = local;
     let mut job = Job::new(E2E_JOB_NAME, E2E_SCRIPT_NAME);
     job.schedule_kind = ScheduleKind::Cron;
     job.cron_expr = Some("0 * * * *".into());
@@ -404,12 +433,108 @@ async fn bootstrap_chronon_fixtures(
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
+    let (purge_job_id, purge_run_id) = seed_failed_purge(local, valence).await?;
+
+    let mut params_job = Job::new(E2E_PARAMS_JOB_NAME, E2E_PURGE_SCRIPT_NAME);
+    params_job.schedule_kind = ScheduleKind::Cron;
+    params_job.cron_expr = Some("0 4 * * 1".into());
+    params_job.enabled = true;
+    params_job.script_sig_hash = "e2e-sig".into();
+    params_job.params_json = serde_json::json!({"older_than_days": 30});
+    let params_job_id = params_job.job_id.clone();
+    coordinator
+        .upsert_job_with_valence(valence, params_job)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
     Ok(FixtureIds {
         script_name: E2E_SCRIPT_NAME.into(),
         job_id,
         job_name: E2E_JOB_NAME.into(),
         run_id,
+        purge_job_id,
+        purge_job_name: E2E_PURGE_JOB_NAME.into(),
+        purge_run_id,
+        params_job_id,
+        params_job_name: E2E_PARAMS_JOB_NAME.into(),
     })
+}
+
+/// A daily purge job: five days that worked, then a run a few minutes ago that failed on
+/// its first try and on all three retries (30 s apart). The job's cron is set to that run's
+/// minute so the schedule, not a person, started it.
+async fn seed_failed_purge(
+    local: &LocalBackend,
+    valence: &Valence,
+) -> anyhow::Result<(String, String)> {
+    let coordinator: &dyn ChrononCoordinatorBackend = local;
+    use chrono::{Duration, Timelike};
+
+    let now = Utc::now();
+    let root_at = (now - Duration::minutes(4))
+        .with_second(0)
+        .and_then(|t| t.with_nanosecond(0))
+        .unwrap_or(now);
+    let mut job = Job::new(E2E_PURGE_JOB_NAME, E2E_PURGE_SCRIPT_NAME);
+    job.schedule_kind = ScheduleKind::Cron;
+    job.cron_expr = Some(format!("{} {} * * *", root_at.minute(), root_at.hour()));
+    job.enabled = true;
+    job.concurrency = 1;
+    job.script_sig_hash = "e2e-sig".into();
+    job.params_json = serde_json::json!({"older_than_days": 30});
+    job.retry_policy_json = serde_json::json!({
+        "max_attempts": 3,
+        "base_delay_ms": 30000_u64,
+        "backoff_multiplier": 1.0_f64,
+        "max_delay_ms": 30000_u64
+    });
+    job.next_run_at = Some(root_at + Duration::days(1));
+    let job_id = job.job_id.clone();
+    coordinator
+        .upsert_job_with_valence(valence, job)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let actor = coordinator
+        .get_job(&job_id)
+        .await
+        .map(|j| j.actor_json)
+        .unwrap_or_default();
+
+    let make = |at: chrono::DateTime<Utc>, attempt: i32, status: RunStatus| {
+        let mut run = Run::new(E2E_PURGE_SCRIPT_NAME, at);
+        run.job_id = Some(job_id.clone());
+        run.attempt = attempt;
+        run.status = status;
+        run.started_at = Some(at);
+        run.finished_at = Some(at + Duration::milliseconds(1200));
+        run.duration_ms = Some(1200);
+        run.actor_json = actor.clone();
+        run.params_json = serde_json::json!({"older_than_days": 30});
+        run
+    };
+    for back in 1..=5 {
+        let mut run = make(root_at - Duration::days(back), 1, RunStatus::Success);
+        run.stdout_text = Some("Purged 1,204 expired sessions.".into());
+        local.store_run(run);
+    }
+    let mut root_run_id = String::new();
+    for attempt in 1..=4 {
+        let mut run = make(
+            root_at + Duration::seconds(30 * i64::from(attempt - 1)),
+            attempt,
+            RunStatus::Failed,
+        );
+        run.stdout_text = Some("Connecting to the sessions database…".into());
+        run.stderr_text = Some("error: connection refused (sessions-db:5432)".into());
+        run.error_json = Some(serde_json::json!({
+            "message": "connection refused: sessions database"
+        }));
+        if attempt == 1 {
+            root_run_id = run.run_id.clone();
+        }
+        local.store_run(run);
+    }
+    Ok((job_id, root_run_id))
 }
 
 /// Build shared Valence/Higgs/Chronon once and seed baseline fixtures.
@@ -466,7 +591,7 @@ pub async fn init_e2e_valence() {
     let chronon_backend: Arc<dyn ChrononCoordinatorBackend> = Arc::clone(&local) as _;
     let registry = Arc::new(e2e_script_registry());
 
-    let fixtures = bootstrap_chronon_fixtures(chronon_backend.as_ref(), &admin_ctx)
+    let fixtures = bootstrap_chronon_fixtures(local.as_ref(), &admin_ctx)
         .await
         .expect("bootstrap chronon fixtures");
 

@@ -38,7 +38,10 @@ pub use jobs::{
     create_job, get_job, get_job_revisions, get_jobs, get_jobs_page, list_chronon_job_pools,
     update_job,
 };
-pub use runs::{get_job_runs_page, get_run, get_runs, get_runs_page, run_job_now};
+pub use runs::{
+    get_job_runs_page, get_job_week, get_run, get_run_attempts, get_run_detail, get_run_now_facts,
+    get_runs, get_runs_caption, get_runs_page, run_job_now,
+};
 pub use scripts::{get_scripts, get_scripts_page};
 pub use types::*;
 

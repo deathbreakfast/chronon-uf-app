@@ -208,6 +208,7 @@
 //!     status: JobStatus::Active,
 //!     revision: 1,
 //!     last_run_at: None,
+//!     last_run_status: None,
 //!     next_run_at: Some("2026-01-02T00:00:00Z".into()),
 //!     timezone: Some("UTC".into()),
 //!     params: serde_json::json!({"token": "secret"}),
@@ -239,6 +240,7 @@ mod map;
 mod page_query;
 mod pools;
 mod revision;
+mod runs;
 mod schedule;
 mod types;
 mod validate;
@@ -252,8 +254,9 @@ pub use lookup::{
     resolve_job_id_from_list, sort_jobs_by_name, sort_scripts_by_name,
 };
 pub use map::{
-    backend_job_to_job, chronon_run_status_to_ui, job_status_label, model_run_to_app_run,
-    normalized_params, parse_script_params, recent_run_from_model, run_status_label,
+    backend_job_to_job, chronon_run_status_to_ui, fill_last_run, job_status_label,
+    model_run_to_app_run, normalized_params, parse_script_params, recent_run_from_model,
+    run_status_label,
 };
 pub use page_query::{
     apply_jobs_page_query, apply_runs_page_query, apply_scripts_page_query,
@@ -266,14 +269,23 @@ pub use pools::{
 pub use revision::{
     redact_job_params_for_non_admin, redact_job_revision, redact_revision_snapshot,
 };
+pub use runs::{
+    actor_is_system, actor_person_id, apply_run_summary_query, coerce_script_param, day_label,
+    describe_cron, duration_words, find_run_group, fold_runs, group_runs, if_it_fails_words,
+    is_schedule_fire_time, job_week, last_run_of, param_field_text, retry_caption, run_attempts,
+    run_title, runs_caption, schedule_line, started_by, started_by_label, summarize_group,
+    when_words, RunGroup, RunResultFilter, RunTimeFilter, RunsTableFilters,
+};
 pub use schedule::{
     apply_create_schedule, apply_update_payload_to_job, build_create_job_model,
     parse_run_once_datetime, recompute_next_run_for_cron, ChrononScheduleError,
 };
 pub use types::{
     CreateJobRequest, CreateJobScheduleType, DashboardChartPoint, DashboardChartSeries,
-    DashboardStats, Job, JobRevision, JobStatus, RecentRun, Run, RunStatus, Script, ScriptParam,
-    UpdateJobRequest, JOBS_PAGE_SIZE, JOB_RUNS_PAGE_SIZE, RUNS_PAGE_SIZE, SCRIPTS_PAGE_SIZE,
+    DashboardStats, DayResult, Job, JobRevision, JobStatus, JobWeek, JobWeekDay, LastRunFailure,
+    RecentRun, Run, RunAttempt, RunDetail, RunNowFacts, RunStatus, RunSummary, Script, ScriptParam,
+    StartedBy, UpdateJobRequest, JOBS_PAGE_SIZE, JOB_RUNS_PAGE_SIZE, RUNS_PAGE_SIZE,
+    SCRIPTS_PAGE_SIZE,
 };
 pub use validate::{
     chronon_job_path, chronon_run_path, encode_ops_path_segment, validate_job_id,
