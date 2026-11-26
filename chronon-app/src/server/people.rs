@@ -32,12 +32,12 @@ pub(super) async fn display_names(
 
 async fn display_name(v: &Valence, user_id: &str) -> Result<Option<String>, ServerFnError> {
     let bare = valence::ownership::normalize_record_id_for_ownership(user_id);
-    let user = match User::get(&bare, v, valence::use_!(r"When a **Chronon admin views the Runs table or a run's page**, Started by names the person who pressed **Run now**. We **load that person's user record** so we can follow it to their profile. Only the display name is used, never their email. If the record can't be read, Started by shows their user id instead.")).await {
+    let user = match User::get(&bare, v, valence::use_!(r"When someone with the **ChrononAdmin permission views the Runs table or a run's page** (those pages refuse everyone else), Started by names the person who pressed **Run now**. We **load that person's user record** so we can follow it to their profile. Only the display name is used, never their email. If the record can't be read, Started by shows their user id instead.")).await {
         Ok(Some(user)) => user,
         Ok(None) => return Ok(None),
         Err(e) => return unreadable(&e),
     };
-    let profiles = match user.get_profile(v, valence::use_!(r"When a **Chronon admin views the Runs table or a run's page**, we **load the display name from the profile** of the person who pressed **Run now** and show it in Started by, such as 'Ada (Run now)'. We read the display name only, never their email. If the profile is missing or the viewer can't read it, Started by shows the person's user id instead.")).await {
+    let profiles = match user.get_profile(v, valence::use_!(r"When someone with the **ChrononAdmin permission views the Runs table or a run's page** (those pages refuse everyone else), we **load the display name from the profile** of the person who pressed **Run now** and show it in Started by, such as 'Ada (Run now)'. We read the display name only, never their email. If the profile is missing or the viewer can't read it, Started by shows the person's user id instead.")).await {
         Ok(profiles) => profiles,
         Err(e) => return unreadable(&e),
     };
