@@ -13,6 +13,8 @@ use super::ssr_utils::{
 use super::{JobWeek, Run, RunAttempt, RunDetail, RunNowFacts, RunSummary};
 
 #[cfg(feature = "ssr")]
+use super::access::{can_on, keep_viewable_runs, require_job, viewable_job_ids};
+#[cfg(feature = "ssr")]
 use chronon_coordinator::ChrononCoordinatorBackend;
 
 /// Runs read per list call. Folding retries needs every attempt in view, so lists scan a
@@ -20,11 +22,43 @@ use chronon_coordinator::ChrononCoordinatorBackend;
 #[cfg(feature = "ssr")]
 const RUNS_FILTER_SCAN_CAP: usize = 5000;
 
-/// The single "may this session start this job" check. Today it is `ChrononAdmin`;
-/// per-job access replaces it here.
+/// Whether this session may start `job`: Run on the job, as the session actor.
 #[cfg(feature = "ssr")]
-async fn can_run_job(_job: &chronon_coordinator::models::Job) -> bool {
-    uf_product::permissions::has_permission(super::CHRONON_ADMIN_PERMISSION).await
+async fn can_run_job(job: &chronon_coordinator::models::Job) -> bool {
+    can_on(job, "Run").await
+}
+
+/// Load a job by id and require `action` on it.
+#[cfg(feature = "ssr")]
+async fn require_job_id_action(
+    backend: &dyn ChrononCoordinatorBackend,
+    job_id: &str,
+    action: &str,
+) -> Result<chronon_coordinator::models::Job, ServerFnError> {
+    let job = backend
+        .get_job(job_id)
+        .await
+        .ok_or_else(|| ServerFnError::new(format!("Job {} not found", job_id)))?;
+    require_job(&job, action).await?;
+    Ok(job)
+}
+
+/// Require View on the job a run belongs to. A run with no job is refused.
+#[cfg(feature = "ssr")]
+async fn require_run_view(
+    backend: &dyn ChrononCoordinatorBackend,
+    run: &chronon_coordinator::models::Run,
+) -> Result<Option<chronon_coordinator::models::Job>, ServerFnError> {
+    match run.job_id.as_deref().filter(|j| !j.is_empty()) {
+        Some(job_id) => match backend.get_job(job_id).await {
+            Some(job) => {
+                require_job(&job, "View").await?;
+                Ok(Some(job))
+            }
+            None => Err(ServerFnError::new(format!("Job {} not found", job_id))),
+        },
+        None => Err(ServerFnError::new("This run has no job to check access on")),
+    }
 }
 
 #[cfg(feature = "ssr")]
@@ -61,8 +95,9 @@ async fn summaries_page(
     job_id: Option<&str>,
     request: PageRequest,
 ) -> Result<Page<RunSummary>, ServerFnError> {
-    let runs = scan_runs(backend, job_id).await?;
+    let mut runs = scan_runs(backend, job_id).await?;
     let jobs = backend.list_jobs().await;
+    keep_viewable_runs(&mut runs, &viewable_job_ids(&jobs).await);
     let names = people_names(ctx, &runs).await?;
     let mut rows = chronon_backend::fold_runs(&runs, &jobs, &names);
     chronon_backend::apply_run_summary_query(&mut rows, &request, chrono::Utc::now());
@@ -88,7 +123,7 @@ async fn require_job_id(
 }
 
 /// Get runs, optionally filtered by job (by ID or name)
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+#[uf_product_macros::server]
 pub async fn get_runs(
     /// Optional job ID or job name to restrict results to a single job's runs.
     job_id_or_name: Option<String>,
@@ -97,8 +132,9 @@ pub async fn get_runs(
     require_session(&ctx)?;
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
-    let db_runs = if let Some(jid_or_name) = &job_id_or_name {
+    let mut db_runs = if let Some(jid_or_name) = &job_id_or_name {
         let actual_job_id = require_job_id(backend, jid_or_name).await?;
+        require_job_id_action(backend, &actual_job_id, "View").await?;
         backend
             .list_runs(Some(&actual_job_id), None, 0, 500)
             .await
@@ -110,6 +146,8 @@ pub async fn get_runs(
             .map_err(|e| ServerFnError::new(format!("Failed to list runs: {}", e)))?
     };
 
+    let jobs = backend.list_jobs().await;
+    keep_viewable_runs(&mut db_runs, &viewable_job_ids(&jobs).await);
     let job_names = resolve_job_names_for_model_runs(backend, &db_runs).await;
 
     let runs: Vec<Run> = db_runs
@@ -132,7 +170,7 @@ pub async fn get_runs(
 ///
 /// Structured filter fields: `result` (`any`, `failed`, `worked`, `running`), `time` (`24h`,
 /// `7d`, `30d`) and `job` (a job id). Quick search matches job name or run id.
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+#[uf_product_macros::server]
 pub async fn get_runs_page(
     /// `DataTable` paging/filter/search request from the client.
     request: PageRequest,
@@ -144,7 +182,7 @@ pub async fn get_runs_page(
 }
 
 /// One page of a job's runs (retries folded in), with the same filters as [`get_runs_page`].
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+#[uf_product_macros::server]
 pub async fn get_job_runs_page(
     /// Job ID or job name whose runs should be listed.
     job_id_or_name: String,
@@ -156,11 +194,12 @@ pub async fn get_job_runs_page(
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
     let actual_job_id = require_job_id(backend, &job_id_or_name).await?;
+    require_job_id_action(backend, &actual_job_id, "View").await?;
     summaries_page(&ctx, backend, Some(actual_job_id.as_str()), request).await
 }
 
 /// Caption over the Runs table: how many runs fall in the time filter and which retried.
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+#[uf_product_macros::server]
 pub async fn get_runs_caption(
     /// Time filter value (`24h`, `7d`, `30d`, or empty for no limit).
     time: String,
@@ -175,8 +214,9 @@ pub async fn get_runs_caption(
         Some(j) => Some(require_job_id(backend, j).await?),
         None => None,
     };
-    let runs = scan_runs(backend, job_id.as_deref()).await?;
+    let mut runs = scan_runs(backend, job_id.as_deref()).await?;
     let jobs = backend.list_jobs().await;
+    keep_viewable_runs(&mut runs, &viewable_job_ids(&jobs).await);
     // Counts only, so Started by names aren't needed.
     let mut rows = chronon_backend::fold_runs(&runs, &jobs, &std::collections::HashMap::new());
     let time_filter = chronon_backend::RunTimeFilter::parse(&time);
@@ -190,7 +230,7 @@ pub async fn get_runs_caption(
 }
 
 /// The first attempt of a run and its retries, oldest first. Any attempt's id works.
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+#[uf_product_macros::server]
 pub async fn get_run_attempts(
     /// Run id of any attempt in the run.
     root_run_id: String,
@@ -208,6 +248,7 @@ pub async fn get_run_attempts(
     else {
         return Ok(Vec::new());
     };
+    require_run_view(backend, &run).await?;
     let runs = scan_runs(backend, run.job_id.as_deref()).await?;
     Ok(chronon_backend::find_run_group(&runs, &root_run_id)
         .map(|group| chronon_backend::run_attempts(&group))
@@ -216,7 +257,7 @@ pub async fn get_run_attempts(
 
 /// A job's last seven days, its summary line, and the failing banner when its newest run
 /// failed. A run that failed and then worked on retry counts as worked.
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+#[uf_product_macros::server]
 pub async fn get_job_week(
     /// Job ID or job name.
     job_id_or_name: String,
@@ -226,12 +267,13 @@ pub async fn get_job_week(
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
     let actual_job_id = require_job_id(backend, &job_id_or_name).await?;
+    require_job_id_action(backend, &actual_job_id, "View").await?;
     let runs = scan_runs(backend, Some(&actual_job_id)).await?;
     Ok(chronon_backend::job_week(&runs, chrono::Utc::now()))
 }
 
 /// Get a single run by ID
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+#[uf_product_macros::server]
 pub async fn get_run(
     /// Unique identifier of the run to look up.
     run_id: String,
@@ -250,14 +292,8 @@ pub async fn get_run(
     let out = match db_run {
         None => None,
         Some(r) => {
-            let jid = r.job_id.clone().unwrap_or_default();
-            let job_name = if jid.is_empty() {
-                r.script_name.clone()
-            } else if let Some(j) = backend.get_job(&jid).await {
-                j.job_name
-            } else {
-                r.script_name.clone()
-            };
+            let job = require_run_view(backend, &r).await?;
+            let job_name = job.map_or_else(|| r.script_name.clone(), |j| j.job_name);
             Some(model_run_to_app_run(r, job_name))
         }
     };
@@ -267,7 +303,7 @@ pub async fn get_run(
 
 /// Everything the run detail page shows: the attempt, its title in words, who started it,
 /// the parameters it used against the stored ones, and whether the viewer may run it again.
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+#[uf_product_macros::server]
 pub async fn get_run_detail(
     /// Run id of the attempt to show.
     run_id: String,
@@ -285,10 +321,7 @@ pub async fn get_run_detail(
     else {
         return Ok(None);
     };
-    let job = match run.job_id.as_deref() {
-        Some(jid) if !jid.is_empty() => backend.get_job(jid).await,
-        _ => None,
-    };
+    let job = require_run_view(backend, &run).await?;
     let runs = scan_runs(backend, run.job_id.as_deref()).await?;
     let group = chronon_backend::find_run_group(&runs, &run_id).unwrap_or_default();
     let root = group.first().copied().unwrap_or(&run);
@@ -328,7 +361,7 @@ pub async fn get_run_detail(
 
 /// What the Run now dialog says before it runs: script, pool, timeout, retries, the script's
 /// typed parameters with the stored values, and the line about the schedule.
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+#[uf_product_macros::server]
 pub async fn get_run_now_facts(
     /// Job ID or job name.
     job_id_or_name: String,
@@ -338,10 +371,7 @@ pub async fn get_run_now_facts(
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
     let actual_job_id = require_job_id(backend, &job_id_or_name).await?;
-    let job = backend
-        .get_job(&actual_job_id)
-        .await
-        .ok_or_else(|| ServerFnError::new(format!("Job {} not found", job_id_or_name)))?;
+    let job = require_job_id_action(backend, &actual_job_id, "View").await?;
     let registry = super::ssr_utils::script_registry()?;
     let script_params = registry
         .list()
@@ -384,8 +414,10 @@ pub async fn get_run_now_facts(
 
 /// Trigger immediate execution of a job.
 ///
-/// The run records the session's actor (who started it) and the parameters it used.
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+/// Needs Run on the job (Run now and Run again both come here). The run records the
+/// session's actor (who started it) and the parameters it used; that person is checked
+/// again when the run starts.
+#[uf_product_macros::server]
 pub async fn run_job_now(
     /// Unique identifier of the job to run immediately.
     job_id: String,
@@ -405,16 +437,15 @@ pub async fn run_job_now(
         Some(job) => Some(job),
         None => backend.get_job_by_name(&job_id).await,
     };
-    if let Some(job) = job.as_ref() {
-        if chronon_coordinator::validate_external_job_actor_json(&job.actor_json).is_err() {
-            return Err(ServerFnError::new(
-                "Platform System jobs cannot be triggered via run_now; they run on schedule only",
-            ));
-        }
-        if !can_run_job(job).await {
-            return Err(ServerFnError::new("You can't run this job"));
-        }
+    let Some(job) = job else {
+        return Err(ServerFnError::new(format!("Job {} not found", job_id)));
+    };
+    if chronon_coordinator::validate_external_job_actor_json(&job.actor_json).is_err() {
+        return Err(ServerFnError::new(
+            "Platform System jobs cannot be triggered via run_now; they run on schedule only",
+        ));
     }
+    require_job(&job, "Run").await?;
 
     // Record the session actor on the run: who started it. Never elevated.
     let valence = ctx
@@ -424,7 +455,7 @@ pub async fn run_job_now(
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     backend
-        .run_now_with_params_and_actor(&job_id, params, Some(actor))
+        .run_now_with_params_and_actor(&job.job_id, params, Some(actor))
         .await
         .map_err(|e| ServerFnError::new(format!("Failed to run job: {}", e)))
 }

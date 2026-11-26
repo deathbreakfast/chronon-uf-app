@@ -18,6 +18,7 @@ pub fn runs_table_columns(show_job_column: bool) -> Vec<DataTableColumnDef> {
             "completed" => RunStatus::Completed,
             "failed" => RunStatus::Failed,
             "cancelled" => RunStatus::Cancelled,
+            "refused" => RunStatus::Refused,
             _ => RunStatus::Pending,
         };
         view! { <RunStatusBadge status=status /> }.into_any()

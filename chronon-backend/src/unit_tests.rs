@@ -23,6 +23,7 @@ fn sample_job(name: &str, script: &str, status: JobStatus) -> Job {
         last_run_attempts: None,
         owner_label: String::new(),
         system_owned: false,
+        your_access: String::new(),
         concurrency: 1,
         timeout_ms: None,
         retry_max_attempts: 0,
@@ -298,6 +299,7 @@ fn build_create_job_model_manual_defaults_happy_path() {
         timeout_seconds: 120,
         max_retries: 55,
         pool: None,
+        owned_by: None,
     };
     let job = build_create_job_model(&payload, "sig-hash".into()).expect("build");
     assert_eq!(job.job_name, "nightly-cleanup");
@@ -320,6 +322,7 @@ fn build_create_job_model_rejects_empty_job_name_sad() {
         timeout_seconds: 60,
         max_retries: 0,
         pool: None,
+        owned_by: None,
     };
     let err = build_create_job_model(&payload, "sig".into()).expect_err("blank name");
     assert!(matches!(err, ChrononScheduleError::Id(_)));
@@ -340,6 +343,7 @@ fn build_create_job_model_rejects_empty_cron_sad() {
         timeout_seconds: 60,
         max_retries: 0,
         pool: None,
+        owned_by: None,
     };
     let err = build_create_job_model(&payload, "sig".into()).expect_err("empty cron");
     assert!(matches!(err, ChrononScheduleError::MissingCron));
@@ -388,6 +392,7 @@ fn apply_jobs_page_query_filters_quick_search_happy_path() {
         quick_search: Some("report".into()),
         filter: None,
         sort: None,
+        cursor: None,
     };
     apply_jobs_page_query(&mut jobs, &request);
     assert_eq!(jobs.len(), 1);
@@ -413,6 +418,7 @@ fn apply_jobs_page_query_status_unknown_empty_sad() {
             }],
         }),
         sort: None,
+        cursor: None,
     };
     apply_jobs_page_query(&mut jobs, &request);
     assert_eq!(jobs.len(), 0);
@@ -437,6 +443,7 @@ fn apply_runs_page_query_not_equals_status_happy_path() {
             }],
         }),
         sort: None,
+        cursor: None,
     };
     apply_runs_page_query(&mut runs, &request);
     assert_eq!(runs.len(), 1);
@@ -465,6 +472,7 @@ fn apply_scripts_page_query_filters_by_description_happy_path() {
         quick_search: Some("nightly".into()),
         filter: None,
         sort: None,
+        cursor: None,
     };
     apply_scripts_page_query(&mut scripts, &request);
     assert_eq!(scripts.len(), 1);
@@ -479,6 +487,7 @@ fn runs_page_needs_memory_scan_blank_quick_search_sad() {
         quick_search: Some("  ".into()),
         filter: None,
         sort: None,
+        cursor: None,
     };
     assert!(!runs_page_needs_memory_scan(&request));
 }
@@ -700,6 +709,7 @@ fn build_create_job_model_stores_pool_happy_path() {
         timeout_seconds: 60,
         max_retries: 0,
         pool: Some(" chronon-mve-a ".into()),
+        owned_by: None,
     };
     let job = build_create_job_model(&payload, "sig".into()).expect("build");
     assert_eq!(job.pool.as_deref(), Some("chronon-mve-a"));

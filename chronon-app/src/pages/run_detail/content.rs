@@ -45,6 +45,7 @@ pub fn RunDetailContent(
             RunStatus::Completed => 3,
             RunStatus::Failed => 4,
             RunStatus::Cancelled => 5,
+            RunStatus::Refused => 6,
         })
     });
 

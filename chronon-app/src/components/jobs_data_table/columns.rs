@@ -27,6 +27,7 @@ fn run_status_from_label(label: &str) -> Option<RunStatus> {
         "completed" => Some(RunStatus::Completed),
         "failed" => Some(RunStatus::Failed),
         "cancelled" => Some(RunStatus::Cancelled),
+        "refused" => Some(RunStatus::Refused),
         _ => None,
     }
 }
@@ -141,6 +142,12 @@ pub fn jobs_table_columns() -> Vec<DataTableColumnDef> {
         view! { <div data-testid="jobs-next-run-cell">{view}</div> }.into_any()
     });
 
+    // The reader's role on each job; "No access" rows stay listed so people can ask.
+    let access_view = Arc::new(|record: DataRecord| {
+        let access = field(&record, "your_access");
+        view! { <span data-testid="jobs-your-access">{access}</span> }.into_any()
+    });
+
     let schedule_header = Arc::new(|| {
         view! {
             <ChrononHelpColumnHeader
@@ -160,6 +167,9 @@ pub fn jobs_table_columns() -> Vec<DataTableColumnDef> {
             .with_sortable(false)
             .with_cell_view(name_view),
         DataTableColumnDef::new("owner", "Owner").with_sortable(false),
+        DataTableColumnDef::new("your_access", "Your access")
+            .with_sortable(false)
+            .with_cell_view(access_view),
         DataTableColumnDef::new("schedule", "Schedule")
             .with_sortable(false)
             .with_header_view(schedule_header)

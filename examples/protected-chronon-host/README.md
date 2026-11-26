@@ -5,7 +5,7 @@ Axum oneshot host under **`/chronon`**: deny without session, allow with
 for the UI.
 
 Production Leptos hosts mount `ChrononRoutes` at **`/chronon`** and gate
-mutating ops with `ChrononAdmin`. This example proves the same path + auth +
+each job's actions on that job's own access (creating jobs needs `ChrononAdmin`). This example proves the same path + auth +
 dashboard contract without the SSR/WASM / Orbital graph. The oneshot path
 `/chronon` matches the Orbital app id/path (`chronon` / `/chronon`).
 
@@ -71,8 +71,8 @@ let stats = dashboard_stats_from_jobs_and_runs(&jobs, &runs, today_start);
 ```
 
 Inventory names match `chronon` / `/chronon`. Layout uses `RequireAuthenticated`;
-ops mutators carry `ChrononAdmin` (manifest
-`permissions::ChrononPermission`). Job create/edit also require a verified email.
+creating a job needs `ChrononAdmin` (manifest `permissions::ChrononPermission`), and
+viewing, running and editing a job need View, Run and Edit on that job. Job create/edit also require a verified email.
 Wire Chronon coordinator + session extractors in host bootstrap before mounting
 the routes.
 

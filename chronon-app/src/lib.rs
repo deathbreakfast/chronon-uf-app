@@ -4,8 +4,9 @@
 //!
 //! Leptos UI mounted at `/chronon` so operators can see job schedules, trigger runs,
 //! and browse registered scripts without building custom pages. Registers alongside
-//! other product apps via `uf_app!` and requires an authenticated session with
-//! `ChrononAdmin` before server functions load coordinator data.
+//! other product apps via `uf_app!` and requires an authenticated session. Each job has its
+//! own access (Can view, Can run, Can edit, Owner), checked as the session actor before a
+//! server function shows its runs or acts on it; see [`permissions`].
 //!
 //! Orbital inventory macros (`uf_app!`, `orbital_routes_extract`) emit undocumented
 //! associated items, so this crate allows `missing_docs` at the crate root while keeping
@@ -50,8 +51,10 @@
 //! Mount during host router setup at startup, alongside other `uf_app!` product routes —
 //! the macro registers launcher metadata and the `/chronon` inventory entry.
 //!
-//! **Prerequisites:** `ssr` on this crate; authenticated session; `ChrononAdmin` permission
-//! ([`CHRONON_ADMIN_PERMISSION`]); Chronon backend in Leptos request context for IO.
+//! **Prerequisites:** `ssr` on this crate; authenticated session; a
+//! `uf_product::access::ResourceAccessBackend` and job bundles from
+//! `permissions::ensure_chronon_job_bundles` at boot (creating jobs also needs
+//! [`CHRONON_ADMIN_PERMISSION`]); Chronon backend in Leptos request context for IO.
 //!
 //! ```rust,ignore
 //! use leptos::prelude::*;
@@ -77,8 +80,8 @@
 //! [`get_run_stats_series`] for trend charts — use this landing page after mounting routes
 //! when operators need a quick health snapshot.
 //!
-//! **Prerequisites:** [`ChrononRoutes`] mounted; `ssr` feature; `ChrononAdmin` permission;
-//! Chronon backend request context wired.
+//! **Prerequisites:** [`ChrononRoutes`] mounted; `ssr` feature; Chronon backend request
+//! context wired. Counts cover the jobs the reader can view.
 //!
 //! ```rust,ignore
 //! use chronon_app::{
@@ -137,6 +140,7 @@
 //!     timeout_seconds: 60,
 //!     max_retries: 0,
 //!     pool: None,
+//!     owned_by: None,
 //! }).await?;
 //!
 //! update_job(
@@ -260,7 +264,7 @@
 //! - [`ChrononLayout`] — shared app bar / nav shell wrapping every route.
 //! - [`mod@help_steps`] — Help spotlight tour inventory; call [`ensure_help_steps_linked`].
 //! - [`mod@server`] — server functions and DTOs backing the UI.
-//! - [`permissions::ChrononPermission`] — permission manifest for `ChrononAdmin`.
+//! - [`permissions`] — the `ChrononAdmin` manifest and per-job access (kind `chronon_job`).
 //! - [`live`] / [`photon_ws`] — client poll-tick and SSR route merge for live updates.
 //! - `chronon_backend` — id validation and pure mapping helpers used by these server fns.
 

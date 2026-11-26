@@ -4,6 +4,8 @@ use leptos::prelude::*;
 use orbital_paging::{Page, PageRequest};
 
 #[cfg(feature = "ssr")]
+use super::access::{held_on, require_job, Held};
+#[cfg(feature = "ssr")]
 use super::helpers::{
     actor_display_names, apply_update_payload_to_job, backend_job_to_job, build_create_job_model,
     ensure_job_name_available, load_existing_job_for_update, persist_updated_job_config,
@@ -18,46 +20,61 @@ use super::{ChrononPoolPickRow, CreateJobRequest, Job, JobRevision, UpdateJobReq
 use chronon_backend::{PauseInfo, SchedulePreview, UpdateJobOutcome};
 use serde::{Deserialize, Serialize};
 
-/// What the signed-in person may do with Chronon jobs.
+/// What the signed-in person may do on this host, and with one job.
 ///
-/// Each flag comes from one helper ([`can_create_job`], [`can_edit_job`], [`can_run_job`]),
-/// so per-job access can replace today's `ChrononAdmin` check in one place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// `can_create` comes from `ChrononAdmin`; the rest come from the job's own access
+/// (View, Run, Edit), checked as the session actor.
+#[allow(clippy::struct_excessive_bools)] // one flag per thing the page can offer
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ChrononJobAccess {
     /// May create jobs.
     pub can_create: bool,
-    /// May change a job's schedule and configuration, and pause or resume it.
+    /// May see the job's runs, parameters and output.
+    pub can_view: bool,
+    /// May change the job's schedule and configuration, and pause or resume it.
     pub can_edit: bool,
     /// May start a run with Run now (System-owned jobs still refuse it).
     pub can_run: bool,
+    /// The reader's role on the job ("Owner", "Can run", "No access", …); empty without a job.
+    pub role: String,
 }
 
-/// Whether this person may create jobs (today: holds `ChrononAdmin`).
+/// Whether this person may create jobs (holds `ChrononAdmin`).
 #[must_use]
 pub const fn can_create_job(is_admin: bool) -> bool {
     is_admin
 }
 
-/// Whether this person may edit, pause or resume jobs (today: holds `ChrononAdmin`).
-#[must_use]
-pub const fn can_edit_job(is_admin: bool) -> bool {
-    is_admin
+/// One choice in the create form's "Owned by" field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OwnedByOption {
+    /// Gauge group id to make an owner; `None` means "Only me".
+    pub group_id: Option<String>,
+    /// What the field shows, such as "Platform ops (team)".
+    pub label: String,
 }
 
-/// Whether this person may use Run now (today: holds `ChrononAdmin`).
-#[must_use]
-pub const fn can_run_job(is_admin: bool) -> bool {
-    is_admin
+/// The create form's "Owned by" choices and the one it starts on.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct OwnedByOptions {
+    /// The creator's teams, then the Chronon admin group, then "Only me".
+    pub options: Vec<OwnedByOption>,
+    /// The creator's team when they're on exactly one, otherwise the admin group.
+    pub default_group_id: Option<String>,
 }
 
-/// Non-admin wire shape: params, cron, the schedule sentence and the owner stay hidden.
+/// The wire shape of one job for this reader: params stay hidden without View, and the
+/// reader's role rides along for the jobs list.
 #[cfg(feature = "ssr")]
-fn redact_job_params_for_non_admin(job: Job, is_admin: bool) -> Job {
-    let mut job = chronon_backend::redact_job_params_for_non_admin(job, is_admin);
-    if !is_admin {
-        job.schedule_text = String::new();
-        job.owner_label = String::new();
+fn job_for_reader(job: Job, held: Held) -> Job {
+    let mut job = job;
+    if !held.view {
+        job.params = serde_json::json!({});
+        job.last_run_at = None;
+        job.last_run_status = None;
+        job.last_run_attempts = None;
     }
+    job.your_access = held.label().to_string();
     job
 }
 
@@ -72,6 +89,20 @@ fn with_last_run(
     job
 }
 
+/// Map stored jobs to wire jobs for this reader, with Last run filled from `runs`.
+#[cfg(feature = "ssr")]
+async fn jobs_for_reader(
+    jobs: Vec<chronon_coordinator::models::Job>,
+    runs: &[chronon_coordinator::models::Run],
+) -> Vec<Job> {
+    let mut out = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        let held = held_on(&job).await;
+        out.push(job_for_reader(with_last_run(job, runs), held));
+    }
+    out
+}
+
 /// Paginated jobs list with quick-search and structured filters.
 #[uf_product_macros::server]
 pub async fn get_jobs_page(
@@ -80,18 +111,12 @@ pub async fn get_jobs_page(
 ) -> Result<Page<Job>, ServerFnError> {
     let ctx = higgs::Higgs::from_request().await?;
     require_session(&ctx)?;
-    let is_admin = uf_product::permissions::has_permission(CHRONON_ADMIN_PERMISSION).await;
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
 
     let runs = super::runs::scan_runs(backend, None).await?;
-    let mut jobs: Vec<Job> = backend
-        .list_jobs()
-        .await
-        .into_iter()
-        .map(|j| with_last_run(j, &runs))
-        .map(|j| redact_job_params_for_non_admin(j, is_admin))
-        .collect();
+    // Every job is listed with the reader's role, so people can see what exists and ask.
+    let mut jobs: Vec<Job> = jobs_for_reader(backend.list_jobs().await, &runs).await;
     chronon_backend::sort_jobs_by_name(&mut jobs);
     apply_jobs_page_query(&mut jobs, &request);
 
@@ -115,20 +140,10 @@ pub async fn get_jobs_page(
 pub async fn get_jobs() -> Result<Vec<Job>, ServerFnError> {
     let ctx = higgs::Higgs::from_request().await?;
     require_session(&ctx)?;
-    let is_admin = uf_product::permissions::has_permission(CHRONON_ADMIN_PERMISSION).await;
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
-
-    let jobs = backend.list_jobs().await;
     let runs = super::runs::scan_runs(backend, None).await?;
-
-    let jobs: Vec<Job> = jobs
-        .into_iter()
-        .map(|j| with_last_run(j, &runs))
-        .map(|j| redact_job_params_for_non_admin(j, is_admin))
-        .collect();
-
-    Ok(jobs)
+    Ok(jobs_for_reader(backend.list_jobs().await, &runs).await)
 }
 
 /// Create a new job and persist it through Chronon backend + DB.
@@ -167,6 +182,30 @@ pub async fn create_job(
     let valence = ctx
         .valence()
         .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // The job's access exists before the job does: the creator maintains it, and the chosen
+    // group owns it. Both writes run as the session actor.
+    let owned_by = payload
+        .owned_by
+        .as_deref()
+        .map(str::trim)
+        .filter(|g| !g.is_empty());
+    if let Some(group) = owned_by {
+        let offered = owned_by_options_for(&ctx, &valence).await;
+        if !offered
+            .options
+            .iter()
+            .any(|o| o.group_id.as_deref() == Some(group))
+        {
+            return Err(ServerFnError::new(format!(
+                "You can't make '{group}' the owner of this job"
+            )));
+        }
+    }
+    crate::permissions::ensure_created_job_bundle(&valence, &created_id, &job_name, owned_by)
+        .await
+        .map_err(|e| ServerFnError::new(format!("Failed to set up the job's access: {e}")))?;
+
     backend
         .upsert_job_with_valence(&valence, job)
         .await
@@ -184,7 +223,6 @@ pub async fn get_job(
         .map_err(|e| ServerFnError::new(e.to_string()))?;
     let ctx = higgs::Higgs::from_request().await?;
     require_session(&ctx)?;
-    let is_admin = uf_product::permissions::has_permission(CHRONON_ADMIN_PERMISSION).await;
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
     let job = if let Some(j) = backend.get_job(&job_id_or_name).await {
@@ -192,19 +230,17 @@ pub async fn get_job(
     } else {
         backend.get_job_by_name(&job_id_or_name).await
     };
-
+    // The name, owner and schedule stay readable without View, so people can ask for it.
     let Some(job) = job else {
         return Ok(None);
     };
+    let held = held_on(&job).await;
     let runs = super::runs::scan_runs(backend, Some(&job.job_id)).await?;
-    Ok(Some(redact_job_params_for_non_admin(
-        with_last_run(job, &runs),
-        is_admin,
-    )))
+    Ok(Some(job_for_reader(with_last_run(job, &runs), held)))
 }
 
 /// Get all revisions for a job (by ID or name)
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+#[uf_product_macros::server]
 pub async fn get_job_revisions(
     /// Job ID or job name whose revisions should be listed.
     job_id_or_name: String,
@@ -219,6 +255,9 @@ pub async fn get_job_revisions(
     let actual_job_id = resolve_job_id(backend, &job_id_or_name)
         .await?
         .ok_or_else(|| ServerFnError::new(format!("Job {} not found", job_id_or_name)))?;
+
+    let job = load_existing_job_for_update(backend, &actual_job_id).await?;
+    require_job(&job, "View").await?;
 
     let revisions = backend
         .list_revisions(&actual_job_id)
@@ -244,8 +283,8 @@ pub async fn get_job_revisions(
 /// Update a job's configuration (creates a new revision).
 ///
 /// When `payload.expected_revision` is behind the stored revision nothing is written and
-/// the result is [`UpdateJobOutcome::Conflict`] naming who saved last.
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+/// the result is [`UpdateJobOutcome::Conflict`] naming who saved last. Needs Edit on the job.
+#[uf_product_macros::server]
 pub async fn update_job(
     /// Job ID or job name to update.
     job_id_or_name: String,
@@ -261,8 +300,8 @@ pub async fn update_job(
 }
 
 /// Pause or resume a job. Saves through the same path as [`update_job`], so it makes a
-/// revision recorded against the signed-in person.
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+/// revision recorded against the signed-in person. Needs Edit on the job.
+#[uf_product_macros::server]
 pub async fn set_job_paused(
     /// Job ID or job name to pause or resume.
     job_id_or_name: String,
@@ -303,6 +342,7 @@ async fn save_job_update(
         .ok_or_else(|| ServerFnError::new(format!("Job {} not found", job_id_or_name)))?;
 
     let existing_job = load_existing_job_for_update(backend, &actual_job_id).await?;
+    require_job(&existing_job, "Edit").await?;
     let payload = build(&existing_job)?;
     let current = u32::try_from(existing_job.current_revision).unwrap_or(u32::MAX);
     if chronon_backend::revision_conflict(payload.expected_revision, current) {
@@ -371,9 +411,8 @@ pub async fn preview_schedule(
 
 /// Who paused a job, when, and which runs it skipped; `None` for a running job.
 ///
-/// Admin-only, like [`get_job_revisions`]: the pauser is a revision actor, and the
-/// skipped times would rebuild the schedule non-admins can't see.
-#[uf_product_macros::server(permission = "ChrononAdmin")]
+/// Needs View on the job, like [`get_job_revisions`]: the pauser is a revision actor.
+#[uf_product_macros::server]
 pub async fn get_job_pause_info(
     /// Job ID or job name.
     job_id_or_name: String,
@@ -388,6 +427,7 @@ pub async fn get_job_pause_info(
         return Ok(None);
     };
     let job = load_existing_job_for_update(backend, &actual_job_id).await?;
+    require_job(&job, "View").await?;
     if job.enabled {
         return Ok(None);
     }
@@ -417,17 +457,103 @@ pub async fn get_job_pause_info(
     ))
 }
 
-/// What the signed-in person may do with jobs on this host.
+/// What the signed-in person may do on this host, and with `job_id_or_name` when given.
 #[uf_product_macros::server]
-pub async fn get_job_access() -> Result<ChrononJobAccess, ServerFnError> {
+pub async fn get_job_access(
+    /// Job ID or job name; `None` asks only whether the reader may create jobs.
+    job_id_or_name: Option<String>,
+) -> Result<ChrononJobAccess, ServerFnError> {
     let ctx = higgs::Higgs::from_request().await?;
     require_session(&ctx)?;
     let is_admin = uf_product::permissions::has_permission(CHRONON_ADMIN_PERMISSION).await;
-    Ok(ChrononJobAccess {
+    let mut access = ChrononJobAccess {
         can_create: can_create_job(is_admin),
-        can_edit: can_edit_job(is_admin),
-        can_run: can_run_job(is_admin),
-    })
+        ..ChrononJobAccess::default()
+    };
+    let Some(job_id_or_name) = job_id_or_name else {
+        return Ok(access);
+    };
+    chronon_backend::validate_job_id_or_name(&job_id_or_name)
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let backend = super::ssr_utils::chronon_backend()?;
+    let backend = backend.as_ref();
+    let Some(actual_job_id) = resolve_job_id(backend, &job_id_or_name).await? else {
+        return Ok(access);
+    };
+    let job = load_existing_job_for_update(backend, &actual_job_id).await?;
+    let held = held_on(&job).await;
+    access.can_view = held.view;
+    access.can_run = held.run;
+    access.can_edit = held.edit;
+    access.role = held.label().to_string();
+    Ok(access)
+}
+
+/// The "Owned by" choices for a job this person creates.
+#[uf_product_macros::server(permission = "ChrononAdmin")]
+pub async fn get_owned_by_options() -> Result<OwnedByOptions, ServerFnError> {
+    let ctx = higgs::Higgs::from_request().await?;
+    require_session(&ctx)?;
+    let valence = ctx
+        .valence()
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(owned_by_options_for(&ctx, &valence).await)
+}
+
+/// The creator's managed team groups (teams mirrored into Gauge), the admin group, and
+/// "Only me". Reads run as the session actor; groups the creator can't read are left out.
+#[cfg(feature = "ssr")]
+async fn owned_by_options_for(ctx: &higgs::Higgs, valence: &valence::Valence) -> OwnedByOptions {
+    use valence::Model as _;
+
+    let me = ctx
+        .session_user_id()
+        .map(|id| id.trim_start_matches("user:").to_string())
+        .unwrap_or_default();
+    let mut teams = Vec::new();
+    if let Ok(groups) = gauge::service::list_groups(valence, None).await {
+        for group in groups {
+            let member = group
+                .members
+                .iter()
+                .any(|m| m.id.trim_start_matches("user:") == me);
+            if !member {
+                continue;
+            }
+            let managed = gauge::generated::PermissionGroup::get(&group.id, valence, valence::use_!(r"When someone **creates a Chronon job**, we **load each Gauge group they belong to** to see whether it is a team, so the job's **Owned by** field can offer their teams."))
+                .await
+                .ok()
+                .flatten()
+                .is_some_and(|g| g.managed_by().is_some());
+            if managed {
+                teams.push(OwnedByOption {
+                    group_id: Some(group.id),
+                    label: format!("{} (team)", group.name),
+                });
+            }
+        }
+    }
+    let admin = super::access::admin_group();
+    let default_group_id = if teams.len() == 1 {
+        teams[0].group_id.clone()
+    } else {
+        admin.as_ref().map(|a| a.id.clone())
+    };
+    let mut options = teams;
+    if let Some(admin) = admin {
+        options.push(OwnedByOption {
+            group_id: Some(admin.id),
+            label: admin.label,
+        });
+    }
+    options.push(OwnedByOption {
+        group_id: None,
+        label: "Only me".to_string(),
+    });
+    OwnedByOptions {
+        options,
+        default_group_id,
+    }
 }
 
 /// Lists the worker pools a job can be pinned to on this host.

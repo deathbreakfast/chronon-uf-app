@@ -53,7 +53,8 @@ pub fn App() -> impl IntoView {
     }
 }
 
-/// Wire Gauge as uf-product permission backend (same pattern as boson-uf-app-e2e).
+/// Wire Gauge as uf-product's permission backend (same pattern as boson-uf-app-e2e), as the
+/// per-job access backend, and the Chronon admin group the job pages name.
 #[cfg(feature = "ssr")]
 pub fn wire_gauge_permissions_bridge() {
     use std::sync::Arc;
@@ -75,7 +76,26 @@ pub fn wire_gauge_permissions_bridge() {
         }
     }
 
+    /// Lab users have no authenticator, so role changes pass the step-up gate here. The
+    /// step-up prompt itself is covered by uf-product's own tests.
+    struct LabStepUp;
+
+    #[async_trait::async_trait]
+    impl uf_product::permissions::StepUpBackend for LabStepUp {
+        async fn require_window(&self) -> Result<(), ServerFnError> {
+            Ok(())
+        }
+    }
+
     uf_product::permissions::provide_permission_backend(Arc::new(GaugePermissionBackend));
+    uf_product::permissions::provide_step_up_backend(Arc::new(LabStepUp));
+    uf_product::access::provide_resource_access_backend(Arc::new(
+        crate::access_backend::GaugeResourceAccess::new(crate::CHRONON_ADMINS_GROUP_ID),
+    ));
+    provide_context(chronon_app::server::ChrononAdminGroup {
+        id: crate::CHRONON_ADMINS_GROUP_ID.to_string(),
+        label: crate::CHRONON_ADMINS_LABEL.to_string(),
+    });
 }
 
 #[cfg(not(feature = "ssr"))]

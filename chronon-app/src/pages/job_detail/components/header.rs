@@ -6,6 +6,8 @@ use orbital::primitives::{
     MessageBar, MessageBarIntent,
 };
 
+use uf_product::access::DeniedActionButton;
+
 use crate::components::JobStatusBadge;
 use crate::server::JobStatus;
 
@@ -13,8 +15,11 @@ use super::super::loaded::JobPageCtx;
 
 /// Header for the job page: name, status, owner and script, and the actions.
 ///
-/// Run now shows for people who can run (and never on a System-owned job); Pause or
-/// Resume and the More menu show for people who can edit.
+/// Run now is enabled for people with Run on the job (and never shows on a System-owned
+/// job); Pause or Resume and the More menu are enabled for people with Edit. Someone
+/// without the action sees the button disabled, with a tooltip naming the action and an
+/// Ask for access link.
+#[allow(clippy::too_many_lines)]
 #[component]
 pub fn JobDetailHeader(
     /// Shared page state.
@@ -34,6 +39,16 @@ pub fn JobDetailHeader(
     let access = ctx.access;
     let status = Signal::derive(move || job.with(|j| j.status));
     let system_owned = Signal::derive(move || job.with(|j| j.system_owned));
+    // Actions wait for the reader's access, so nobody sees a denied button flash past.
+    let access_known = Signal::derive(move || access.with(|a| !a.role.is_empty()));
+    let resource = StoredValue::new(crate::permissions::job_ref_for(&job.get_untracked()));
+    let pause_label = move || {
+        if status.get() == JobStatus::Active {
+            "Pause"
+        } else {
+            "Resume"
+        }
+    };
     let caption = move || {
         job.with(|j| {
             // The owner is hidden from people without Chronon admin.
@@ -70,7 +85,15 @@ pub fn JobDetailHeader(
                             </Caption1>
                         }
                     >
-                        <Show when=move || access.get().can_run>
+                        <Show when=move || access_known.get()>
+                        <Show
+                            when=move || access.get().can_run
+                            fallback=move || view! {
+                                <div data-testid="run-now-denied">
+                                    <DeniedActionButton resource=resource.get_value() action="Run" label="Run now" />
+                                </div>
+                            }
+                        >
                             <div id="chronon-job-detail-run-now" data-testid="run-now-button">
                                 <Button
                                     appearance=ButtonAppearance::Primary
@@ -82,6 +105,14 @@ pub fn JobDetailHeader(
                                 </Button>
                             </div>
                         </Show>
+                        </Show>
+                    </Show>
+                    <Show when=move || access_known.get() && !access.get().can_edit>
+                        <div data-testid="pause-resume-denied">
+                            {move || view! {
+                                <DeniedActionButton resource=resource.get_value() action="Edit" label=pause_label() />
+                            }}
+                        </div>
                     </Show>
                     <Show when=move || access.get().can_edit>
                         <div id="chronon-job-detail-pause" data-testid="pause-resume-button">
@@ -96,7 +127,7 @@ pub fn JobDetailHeader(
                                 })
                                 on_click=Callback::new(move |_| ctx.pause_dialog_open.set(true))
                             >
-                                {move || if status.get() == JobStatus::Active { "Pause" } else { "Resume" }}
+                                {pause_label}
                             </Button>
                         </div>
                         <div data-testid="job-more-menu">

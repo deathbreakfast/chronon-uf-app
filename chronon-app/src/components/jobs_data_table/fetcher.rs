@@ -22,6 +22,7 @@ pub fn build_jobs_fetcher() -> PageFetcher {
                 has_more: page.has_more,
                 total_count: page.total_count,
                 next_request_offset: page.next_request_offset,
+                next_cursor: page.next_cursor,
             })
         }) as Pin<Box<dyn Future<Output = Result<Page<DataRecord>, ServerFnError>> + Send>>
     })

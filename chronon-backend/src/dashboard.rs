@@ -54,7 +54,11 @@ pub fn dashboard_stats_from_jobs_and_runs(
     let failed_runs_today = count_u32(
         runs_today
             .iter()
-            .filter(|r| matches!(r.status, CoreRunStatus::Failed | CoreRunStatus::Timeout))
+            // A refused run never started, so it isn't a failure of the job.
+            .filter(|r| {
+                matches!(r.status, CoreRunStatus::Failed | CoreRunStatus::Timeout)
+                    && crate::access::run_refusal(r).is_none()
+            })
             .count(),
     );
     let running_now = count_u32(
@@ -145,7 +149,9 @@ pub fn run_stats_series_from_runs(
             CoreRunStatus::Success => {
                 *success_buckets.entry(bucket_ts).or_insert(0) += 1;
             }
-            CoreRunStatus::Failed | CoreRunStatus::Timeout | CoreRunStatus::Canceled => {
+            CoreRunStatus::Failed | CoreRunStatus::Timeout | CoreRunStatus::Canceled
+                if crate::access::run_refusal(last).is_none() =>
+            {
                 *failed_buckets.entry(bucket_ts).or_insert(0) += 1;
             }
             _ => {}

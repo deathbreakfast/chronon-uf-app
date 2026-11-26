@@ -1,6 +1,6 @@
 import { test as base, expect, type Page } from "@playwright/test";
 
-export type SeedAuthKind = "anonymous" | "admin" | "outsider" | "unverified";
+export type SeedAuthKind = "anonymous" | "admin" | "outsider" | "unverified" | "member";
 
 export type SeedFixtures = {
   script_name: string;
@@ -15,6 +15,19 @@ export type SeedFixtures = {
   /** Job with one integer parameter (`older_than_days`, stored 30) for Run now. */
   params_job_id: string;
   params_job_name: string;
+  /** Job only the Chronon admins own (resource-access specs). */
+  access_job_id: string;
+  access_job_name: string;
+  /** Job an outsider asks to view. */
+  request_job_id: string;
+  request_job_name: string;
+  /** Job the Platform ops team can run from boot. */
+  refused_job_id: string;
+  refused_job_name: string;
+  /** Default owner group of every job ("Chronon admins"). */
+  admins_group: string;
+  /** Team group `member` belongs to ("Platform ops"). */
+  team_name: string;
 };
 
 /** All Chronon Help inventory keys — seed as seen so non-tour specs stay quiet. */

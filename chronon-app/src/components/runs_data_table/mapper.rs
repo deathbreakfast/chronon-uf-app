@@ -5,13 +5,14 @@ use orbital_data::{DataRecord, DataValue};
 use crate::server::RunSummary;
 
 const fn run_status_key(status: crate::RunStatus) -> &'static str {
-    use crate::RunStatus::{Cancelled, Completed, Failed, Pending, Running};
+    use crate::RunStatus::{Cancelled, Completed, Failed, Pending, Refused, Running};
     match status {
         Pending => "pending",
         Running => "running",
         Completed => "completed",
         Failed => "failed",
         Cancelled => "cancelled",
+        Refused => "refused",
     }
 }
 
@@ -39,6 +40,19 @@ fn duration_label(row: &RunSummary) -> String {
     )
 }
 
+/// Who started the run; a Refused run adds why, such as
+/// `ravi (Run now) · no longer holds Run on billing-rollup`.
+fn started_by_text(row: &RunSummary) -> String {
+    let who = row.started_by.short_label();
+    match row.refused_action.as_deref() {
+        Some(action) => format!(
+            "{who} · {}",
+            chronon_backend::refused_note(action, &row.job_name)
+        ),
+        None => who,
+    }
+}
+
 /// Maps a run summary onto a runs-table record keyed by its first attempt's id.
 pub fn run_to_record(row: RunSummary) -> DataRecord {
     let id = row.root_run_id.clone();
@@ -56,10 +70,7 @@ pub fn run_to_record(row: RunSummary) -> DataRecord {
             DataValue::Text(crate::utils::format_started_at(&row.started_at)),
         ),
         ("duration".into(), DataValue::Text(duration_label(&row))),
-        (
-            "started_by".into(),
-            DataValue::Text(row.started_by.short_label()),
-        ),
+        ("started_by".into(), DataValue::Text(started_by_text(&row))),
     ]);
     if !row.job_name.is_empty() {
         fields.insert("job_name".into(), DataValue::Text(row.job_name));

@@ -28,6 +28,8 @@ pub enum RunStatus {
     Failed,
     /// The run was cancelled before completion.
     Cancelled,
+    /// The person who started the run lost access before it started, so it never ran.
+    Refused,
 }
 
 /// Parameter metadata for a registered script signature.
@@ -102,6 +104,10 @@ pub struct Job {
     /// True when the job belongs to the platform System actor (schedule-only).
     #[serde(default)]
     pub system_owned: bool,
+    /// What the reader can do with this job ("Owner", "Can run", "No access", …); empty
+    /// until a server function fills it for the session.
+    #[serde(default)]
+    pub your_access: String,
     /// Runs allowed at once.
     #[serde(default)]
     pub concurrency: u32,
@@ -198,6 +204,8 @@ pub struct RunSummary {
     pub duration_ms: Option<u64>,
     /// Who or what started the first attempt.
     pub started_by: StartedBy,
+    /// For a Refused run, the action its starter no longer held (such as `Run`).
+    pub refused_action: Option<String>,
     /// Parameters the run used.
     pub params: serde_json::Value,
 }
@@ -449,6 +457,9 @@ pub struct CreateJobRequest {
     /// Worker pool for the job's runs; `None` or blank means [`crate::DEFAULT_POOL`].
     #[serde(default)]
     pub pool: Option<String>,
+    /// Gauge group to make an owner of the new job; `None` means only the creator.
+    #[serde(default)]
+    pub owned_by: Option<String>,
 }
 
 fn default_params() -> serde_json::Value {

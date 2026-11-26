@@ -1,6 +1,7 @@
 //! Process-wide Valence + Higgs + in-memory Chronon for Playwright.
 #![allow(dead_code)]
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use async_trait::async_trait;
@@ -25,6 +26,7 @@ use valence::{
 };
 
 struct E2eState {
+    local: Arc<LocalBackend>,
     router: Arc<DatabaseRouter>,
     higgs: Arc<HiggsConfig>,
     chronon_backend: Arc<dyn ChrononCoordinatorBackend>,
@@ -45,6 +47,37 @@ pub struct FixtureIds {
     pub purge_run_id: String,
     pub params_job_id: String,
     pub params_job_name: String,
+    /// Job only the Chronon admins own; a spec gives the team Can run on it.
+    pub access_job_id: String,
+    pub access_job_name: String,
+    /// Job an outsider asks to view; the owner approves it in Gauge.
+    pub request_job_id: String,
+    pub request_job_name: String,
+    /// Job the team can run from boot; a spec takes Run away between trigger and start.
+    pub refused_job_id: String,
+    pub refused_job_name: String,
+}
+
+/// Jobs the resource-access specs change, one per story so lanes never share one.
+pub const E2E_ACCESS_JOB_NAME: &str = "e2e-access-rollup";
+pub const E2E_REQUEST_JOB_NAME: &str = "e2e-access-request";
+pub const E2E_REFUSED_JOB_NAME: &str = "e2e-access-refused";
+
+async fn seed_manual_job(
+    coordinator: &dyn ChrononCoordinatorBackend,
+    valence: &Valence,
+    name: &str,
+) -> anyhow::Result<String> {
+    let mut job = Job::new(name, E2E_SCRIPT_NAME);
+    job.schedule_kind = ScheduleKind::Manual;
+    job.enabled = true;
+    job.script_sig_hash = "e2e-sig".into();
+    let id = job.job_id.clone();
+    coordinator
+        .upsert_job_with_valence(valence, job)
+        .await
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(id)
 }
 
 static E2E_STATE: OnceLock<Arc<E2eState>> = OnceLock::new();
@@ -58,6 +91,23 @@ pub const E2E_PURGE_SCRIPT_NAME: &str = "e2e_purge";
 pub const E2E_PURGE_JOB_NAME: &str = "e2e-session-purge";
 /// Job with a stored `older_than_days: 30` that Run now specs run by hand.
 pub const E2E_PARAMS_JOB_NAME: &str = "e2e-weekly-export";
+/// Group that holds `ChrononAdmin`; default owner of every job bundle made at boot.
+pub const CHRONON_ADMINS_GROUP_ID: &str = "chronon.admins";
+/// Display name of [`CHRONON_ADMINS_GROUP_ID`].
+pub const CHRONON_ADMINS_LABEL: &str = "Chronon admins";
+/// A team mirrored into Gauge the way Polaron does it: a managed group with `member` on it.
+pub const E2E_TEAM_GROUP_ID: &str = "polaron_team_ops";
+/// Display name of [`E2E_TEAM_GROUP_ID`].
+pub const E2E_TEAM_NAME: &str = "Platform ops";
+
+/// While set, Run now leaves new runs queued until [`release_held_runs`] starts them, so a
+/// spec can change someone's access between the trigger and the start.
+static HOLD_RUNS: AtomicBool = AtomicBool::new(false);
+
+/// Hold (or stop holding) new runs in the queue.
+pub fn set_hold_runs(hold: bool) {
+    HOLD_RUNS.store(hold, Ordering::SeqCst);
+}
 
 fn e2e_echo_invoke(
     _ctx: Box<dyn ScriptContext>,
@@ -99,6 +149,9 @@ struct LocalBackend {
     jobs: Mutex<Vec<Job>>,
     runs: Mutex<Vec<Run>>,
     revisions: Mutex<Vec<(String, JobRevision)>>,
+    /// Rebuilds a run's stored actor into its own Valence when the run starts, as the host's
+    /// Chronon context factory does.
+    actor_factory: OnceLock<RouterValenceFactory>,
 }
 
 impl LocalBackend {
@@ -122,6 +175,79 @@ impl LocalBackend {
         } else {
             jobs.push(job);
         }
+    }
+
+    /// Start a queued run the way Chronon's executor does: rebuild the actor that triggered
+    /// it, and check again, as that actor, that it still holds Run on the job. A refused run
+    /// ends Failed with the refusal text and is not retried; System runs start unchecked.
+    async fn start_run(&self, run_id: &str) {
+        let Some(mut run) = self.get_run(run_id).await.ok().flatten() else {
+            return;
+        };
+        if run.status != RunStatus::Queued {
+            return;
+        }
+        let job = match run.job_id.as_deref() {
+            Some(id) => self.get_job(id).await,
+            None => None,
+        };
+        let refused = match (
+            job.as_ref(),
+            chronon_backend::is_system_actor(&run.actor_json),
+        ) {
+            (Some(job), false) => {
+                let resource = chronon_backend::core_job_resource_id(job);
+                (!self.actor_can_run(&run.actor_json, &resource).await)
+                    .then(|| chronon_backend::refused_text("Run", &resource))
+            }
+            _ => None,
+        };
+        let now = Utc::now();
+        run.started_at = Some(now);
+        run.finished_at = Some(now);
+        if let Some(text) = refused {
+            run.status = RunStatus::Failed;
+            run.duration_ms = Some(0);
+            run.error_json = Some(serde_json::json!({ "message": text }));
+        } else {
+            run.status = RunStatus::Success;
+            run.duration_ms = Some(15);
+        }
+        self.store_run(run);
+    }
+
+    /// Whether `actor_json` holds Run on job `resource`, checked as that actor.
+    async fn actor_can_run(&self, actor_json: &serde_json::Value, resource: &str) -> bool {
+        use gauge::resource_permissions::{permission_name, ResourceAction};
+        let Some(factory) = self.actor_factory.get() else {
+            return false;
+        };
+        let Ok(actor) = factory.build(actor_json) else {
+            return false;
+        };
+        let name = permission_name(
+            chronon_app::permissions::CHRONON_JOB,
+            resource,
+            ResourceAction::Run,
+        );
+        let _caller = gauge::instrumentation::PermissionCheckCallerGuard::new("run_start");
+        service::actor_can(&actor, &name).await.unwrap_or(false)
+    }
+
+    /// Start every run [`set_hold_runs`] kept queued.
+    async fn release_held_runs(&self) -> usize {
+        let queued: Vec<String> = self
+            .runs
+            .lock()
+            .expect("runs lock")
+            .iter()
+            .filter(|r| r.status == RunStatus::Queued)
+            .map(|r| r.run_id.clone())
+            .collect();
+        for id in &queued {
+            self.start_run(id).await;
+        }
+        queued.len()
     }
 
     fn store_run(&self, run: Run) {
@@ -292,14 +418,14 @@ impl ChrononCoordinatorBackend for LocalBackend {
         let now = Utc::now();
         let mut run = Run::new(job.script_name.clone(), now);
         run.job_id = Some(job.job_id.clone());
-        run.status = RunStatus::Success;
-        run.started_at = Some(now);
-        run.finished_at = Some(now);
-        run.duration_ms = Some(15);
+        run.status = RunStatus::Queued;
         run.actor_json = actor_override.unwrap_or_else(|| job.actor_json.clone());
         run.params_json = params_override.unwrap_or(job.params_json);
         let run_id = run.run_id.clone();
         self.store_run(run);
+        if !HOLD_RUNS.load(Ordering::SeqCst) {
+            self.start_run(&run_id).await;
+        }
         Ok(run_id)
     }
 }
@@ -363,6 +489,9 @@ async fn seed_profile(id: &str, display_name: &str, valence: &Valence) {
 
 async fn seed_super_user_with_member(system: &Valence, member_user_id: &str) {
     let super_group = gauge::generated::PermissionGroup::new(
+        None,
+        None,
+        None,
         SUPER_USER_GROUP_NAME.to_string(),
         Some("super users".to_string()),
         Utc::now(),
@@ -466,6 +595,46 @@ async fn grant_chronon_admin(admin_ctx: &Valence, user_id: &str) {
         .expect("grant ChrononAdmin");
 }
 
+/// The host's admin group: holds `ChrononAdmin`, with `admin` as its member and owner.
+async fn seed_chronon_admins_group(system: &Valence) {
+    gauge::resource_permissions::ensure_group_granted_permission(
+        system,
+        CHRONON_ADMINS_GROUP_ID,
+        CHRONON_ADMINS_LABEL,
+        "People who administer Chronon",
+        "ChrononAdmin",
+        &[],
+    )
+    .await
+    .expect("seed Chronon admins group");
+    service::add_group_member_user(CHRONON_ADMINS_GROUP_ID, "admin", system)
+        .await
+        .expect("add admin to Chronon admins");
+    // Members of the default owner group hold every action on a job; changing who has
+    // access takes an owner of that group, as in Gauge's own group pages.
+    service::add_group_owner_user(CHRONON_ADMINS_GROUP_ID, "admin", system)
+        .await
+        .expect("make admin an owner of Chronon admins");
+}
+
+/// A team group as Polaron's mirror makes it: managed, owned by `admin`, with `member`.
+async fn seed_team(system: &Valence) {
+    service::create_managed_group(
+        E2E_TEAM_GROUP_ID,
+        E2E_TEAM_NAME,
+        "Mirrored from the Platform ops team",
+        Some("admin"),
+        Some("polaron"),
+        Some("ops"),
+        system,
+    )
+    .await
+    .expect("create team group");
+    service::add_group_member_user(E2E_TEAM_GROUP_ID, "member", system)
+        .await
+        .expect("add member to the team");
+}
+
 async fn bootstrap_chronon_fixtures(
     local: &LocalBackend,
     valence: &Valence,
@@ -482,10 +651,21 @@ async fn bootstrap_chronon_fixtures(
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let run_id = coordinator
-        .run_now(&job_id)
+    // A finished run from before per-job access, recorded directly.
+    let now = Utc::now();
+    let mut run = Run::new(E2E_SCRIPT_NAME.to_string(), now);
+    run.job_id = Some(job_id.clone());
+    run.status = RunStatus::Success;
+    run.started_at = Some(now);
+    run.finished_at = Some(now);
+    run.duration_ms = Some(15);
+    run.actor_json = coordinator
+        .get_job(&job_id)
         .await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+        .map(|j| j.actor_json)
+        .unwrap_or_default();
+    let run_id = run.run_id.clone();
+    local.store_run(run);
 
     let (purge_job_id, purge_run_id) = seed_failed_purge(local, valence).await?;
 
@@ -501,7 +681,17 @@ async fn bootstrap_chronon_fixtures(
         .await
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
+    let access_job_id = seed_manual_job(coordinator, valence, E2E_ACCESS_JOB_NAME).await?;
+    let request_job_id = seed_manual_job(coordinator, valence, E2E_REQUEST_JOB_NAME).await?;
+    let refused_job_id = seed_manual_job(coordinator, valence, E2E_REFUSED_JOB_NAME).await?;
+
     Ok(FixtureIds {
+        access_job_id,
+        access_job_name: E2E_ACCESS_JOB_NAME.into(),
+        request_job_id,
+        request_job_name: E2E_REQUEST_JOB_NAME.into(),
+        refused_job_id,
+        refused_job_name: E2E_REFUSED_JOB_NAME.into(),
         script_name: E2E_SCRIPT_NAME.into(),
         job_id,
         job_name: E2E_JOB_NAME.into(),
@@ -629,6 +819,7 @@ pub async fn init_e2e_valence() {
     seed_user("outsider", true, &system).await;
     seed_user("unverified", false, &system).await;
     seed_profile("admin", "Ada Admin", &system).await;
+    seed_user("member", true, &system).await;
     seed_super_user_with_member(&system, "admin").await;
 
     sync_permission_manifests(&system, &[chronon_admin_manifest()])
@@ -638,7 +829,8 @@ pub async fn init_e2e_valence() {
     let admin_ctx = system.with_actor(Actor::User {
         user_id: "admin".to_string(),
     });
-    grant_chronon_admin(&admin_ctx, "admin").await;
+    seed_chronon_admins_group(&system).await;
+    seed_team(&system).await;
     grant_chronon_admin(&admin_ctx, "unverified").await;
     demote_admin_from_super_user(&system).await;
 
@@ -649,6 +841,32 @@ pub async fn init_e2e_valence() {
     let fixtures = bootstrap_chronon_fixtures(local.as_ref(), &admin_ctx)
         .await
         .expect("bootstrap chronon fixtures");
+
+    // Host boot: a bundle per script and per existing job, owned by the Chronon admins.
+    let script_names: Vec<String> = registry.list().iter().map(|d| d.name.to_string()).collect();
+    chronon_app::permissions::ensure_chronon_job_bundles(
+        &system,
+        &script_names,
+        &chronon_backend.list_jobs().await,
+        CHRONON_ADMINS_GROUP_ID,
+    )
+    .await
+    .expect("ensure Chronon job bundles");
+    // Role changes run as a signed-in owner; admin owns the job through Chronon admins.
+    gauge::resource_permissions::set_principal_role(
+        &admin_ctx,
+        chronon_app::permissions::CHRONON_JOB,
+        &fixtures.refused_job_id,
+        (gauge::types::PrincipalKind::Group, E2E_TEAM_GROUP_ID),
+        gauge::resource_permissions::roles::Role::Run,
+    )
+    .await
+    .expect("team can run the refused-run job");
+    let _ = local.actor_factory.set(RouterValenceFactory::new(
+        Arc::clone(&router),
+        RouterValenceFactoryConfig::new(default_key.clone())
+            .actor_json_policy(external_actor_json_policy()),
+    ));
 
     let factory: Arc<dyn HiggsValenceFactory> = Arc::new(HiggsFactory(RouterValenceFactory::new(
         Arc::clone(&router),
@@ -665,6 +883,7 @@ pub async fn init_e2e_valence() {
     );
 
     let state = Arc::new(E2eState {
+        local,
         router,
         higgs,
         chronon_backend,
@@ -718,6 +937,12 @@ impl chronon_app::ChrononPoolProvider for E2ePools {
 
 pub fn e2e_pool_provider() -> Arc<dyn chronon_app::ChrononPoolProvider> {
     Arc::new(E2ePools)
+}
+
+/// Start every run held in the queue; returns how many started.
+pub async fn release_held_runs() -> usize {
+    let local = Arc::clone(&state().local);
+    local.release_held_runs().await
 }
 
 pub fn e2e_registry() -> Arc<ScriptRegistry> {
