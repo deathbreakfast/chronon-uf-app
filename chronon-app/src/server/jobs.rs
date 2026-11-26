@@ -282,8 +282,16 @@ pub async fn get_job_revisions(
         })
         .collect();
 
+    let valence = ctx
+        .valence()
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let names = actor_display_names(
+        &valence,
+        job_revisions.iter().map(|r| &r.changed_by_actor_json),
+    )
+    .await;
     // saved_by and settings_text carry what History shows; raw actor identity stays here.
-    Ok(chronon_backend::describe_revisions(job_revisions)
+    Ok(chronon_backend::describe_revisions(job_revisions, &names)
         .into_iter()
         .map(|mut r| {
             r.changed_by_actor_json = serde_json::Value::Null;

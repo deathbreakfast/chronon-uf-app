@@ -74,7 +74,7 @@ test.describe("pw-chronon-dashboard", () => {
     const paused = page.getByTestId("chronon-attention-item").filter({ hasText: `${name} is paused` });
     await expect(paused).toHaveCount(1, { timeout: 60_000 });
     await expect(paused).toHaveAttribute("data-kind", "paused");
-    await expect(paused).toContainText("paused it today");
+    await expect(paused).toContainText("Ada Admin paused it today");
     await expect(paused.getByTestId("chronon-attention-see-run")).toHaveCount(0);
     await paused.getByTestId("chronon-attention-open-job").getByRole("link").click();
     await expect(page).toHaveURL(/\/chronon\/jobs\//, { timeout: 60_000 });

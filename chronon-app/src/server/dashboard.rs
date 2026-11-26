@@ -6,6 +6,8 @@ use leptos::prelude::*;
 #[cfg(feature = "ssr")]
 use super::access::{keep_viewable_runs, viewable_job_ids};
 #[cfg(feature = "ssr")]
+use super::helpers::actor_display_names;
+#[cfg(feature = "ssr")]
 use super::ssr_utils::require_session;
 use super::{Attention, ComingUpRun, DashboardChartSeries, DashboardStats, RunSummary};
 
@@ -65,7 +67,10 @@ pub async fn get_attention() -> Result<Attention, ServerFnError> {
     let (jobs, db_runs) = viewable_jobs_and_runs(backend).await?;
     let now = chrono::Utc::now();
 
-    // Who paused each paused job comes from its revisions.
+    // Who paused each paused job comes from its revisions, by display name where known.
+    let valence = ctx
+        .valence()
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
     let mut pauses = std::collections::HashMap::new();
     for job in jobs.iter().filter(|j| !j.enabled) {
         let revisions: Vec<_> = backend
@@ -82,7 +87,9 @@ pub async fn get_attention() -> Result<Attention, ServerFnError> {
                 )
             })
             .collect();
-        if let Some(info) = chronon_backend::pause_info_from_revisions(job, &revisions, now) {
+        let names = actor_display_names(&valence, revisions.iter().map(|r| &r.2)).await;
+        if let Some(info) = chronon_backend::pause_info_from_revisions(job, &revisions, now, &names)
+        {
             pauses.insert(job.job_id.clone(), info);
         }
     }

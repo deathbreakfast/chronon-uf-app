@@ -11,7 +11,10 @@
 use serde_json::Value;
 
 use crate::pools::effective_job_pool;
-use crate::schedule::{actor_label, describe, describe_run_once, MANUAL_SCHEDULE_TEXT};
+use std::collections::HashMap;
+use std::hash::BuildHasher;
+
+use crate::schedule::{actor_label_named, describe, describe_run_once, MANUAL_SCHEDULE_TEXT};
 use crate::types::{Job, JobRevision};
 
 /// Clear job params and cron on the wire when the session lacks `ChrononAdmin`.
@@ -251,9 +254,12 @@ pub fn revision_summary(previous: Option<&Value>, current: &Value) -> String {
 
 /// Fills in who saved each revision, what it changed and its settings text, newest first.
 ///
-/// For readers who can view the job; everyone else gets [`redact_job_revision`].
+/// The saver shows by display name when `names` has one, keyed by
+/// [`crate::actor_user_id`], and by user id otherwise. For readers who can view the job;
+/// everyone else gets [`redact_job_revision`].
 ///
 /// ```rust
+/// use std::collections::HashMap;
 /// use chronon_backend::{describe_revisions, JobRevision};
 ///
 /// let rev = |n: u32, pool: &str| JobRevision {
@@ -266,19 +272,23 @@ pub fn revision_summary(previous: Option<&Value>, current: &Value) -> String {
 ///     summary: String::new(),
 ///     settings_text: String::new(),
 /// };
-/// let rows = describe_revisions(vec![rev(1, "general"), rev(2, "thumbs-gpu")]);
+/// let names = HashMap::from([("ines".to_string(), "Ines Okoro".to_string())]);
+/// let rows = describe_revisions(vec![rev(1, "general"), rev(2, "thumbs-gpu")], &names);
 /// assert_eq!(rows[0].revision_number, 2);
-/// assert_eq!(rows[0].saved_by, "ines");
+/// assert_eq!(rows[0].saved_by, "Ines Okoro");
 /// assert_eq!(rows[0].summary, "Moved to the thumbs-gpu worker pool");
 /// assert_eq!(rows[1].summary, "Created the job");
 /// ```
 #[must_use]
-pub fn describe_revisions(mut revisions: Vec<JobRevision>) -> Vec<JobRevision> {
+pub fn describe_revisions<S: BuildHasher>(
+    mut revisions: Vec<JobRevision>,
+    names: &HashMap<String, String, S>,
+) -> Vec<JobRevision> {
     revisions.sort_by_key(|r| r.revision_number);
     let snapshots: Vec<Value> = revisions.iter().map(|r| r.snapshot_json.clone()).collect();
     for (i, revision) in revisions.iter_mut().enumerate() {
         let previous = i.checked_sub(1).map(|p| &snapshots[p]);
-        revision.saved_by = actor_label(&revision.changed_by_actor_json);
+        revision.saved_by = actor_label_named(&revision.changed_by_actor_json, names);
         revision.summary = revision_summary(previous, &snapshots[i]);
         revision.settings_text = revision_settings_text(&snapshots[i]);
     }
@@ -410,13 +420,18 @@ mod tests {
     #[test]
     fn describe_revisions_names_saver_and_pool_move_happy() {
         let ines = serde_json::json!({"User": {"user_id": "ines"}});
-        let rows = describe_revisions(vec![
-            revision(2, ines.clone(), snapshot("thumbs-gpu", "0 2 * * *", true)),
-            revision(1, ines, snapshot("general", "0 2 * * *", true)),
-        ]);
+        let names =
+            std::collections::HashMap::from([("ines".to_string(), "Ines Okoro".to_string())]);
+        let rows = describe_revisions(
+            vec![
+                revision(2, ines.clone(), snapshot("thumbs-gpu", "0 2 * * *", true)),
+                revision(1, ines, snapshot("general", "0 2 * * *", true)),
+            ],
+            &names,
+        );
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].revision_number, 2);
-        assert_eq!(rows[0].saved_by, "ines");
+        assert_eq!(rows[0].saved_by, "Ines Okoro");
         assert_eq!(rows[0].summary, "Moved to the thumbs-gpu worker pool");
         assert!(rows[0].settings_text.contains("worker pool: thumbs-gpu"));
         assert!(rows[0].settings_text.contains("bucket: demo-uploads"));
@@ -426,12 +441,24 @@ mod tests {
 
     #[test]
     fn describe_revisions_system_saver_reads_the_platform() {
-        let rows = describe_revisions(vec![revision(
-            1,
-            serde_json::json!({"System": {"operation": "boot"}}),
-            snapshot("general", "0 2 * * *", true),
-        )]);
-        assert_eq!(rows[0].saved_by, "the platform");
+        let rows = describe_revisions(
+            vec![
+                revision(
+                    2,
+                    serde_json::json!({"User": {"user_id": "u-2"}}),
+                    snapshot("general", "0 2 * * *", true),
+                ),
+                revision(
+                    1,
+                    serde_json::json!({"System": {"operation": "boot"}}),
+                    snapshot("general", "0 2 * * *", true),
+                ),
+            ],
+            &std::collections::HashMap::new(),
+        );
+        // No display name falls back to the user id.
+        assert_eq!(rows[0].saved_by, "u-2");
+        assert_eq!(rows[1].saved_by, "the platform");
     }
 
     #[test]

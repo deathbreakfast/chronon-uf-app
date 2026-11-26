@@ -21,7 +21,7 @@ test.describe("pw-chronon-history", () => {
 
     const current = rows.filter({ hasText: "Revision 2" });
     await expect(current).toContainText("Moved to the e2e-pool-a worker pool");
-    await expect(current).toContainText("admin");
+    await expect(current).toContainText("Ada Admin");
     await expect(current.getByTestId("job-history-current")).toHaveText("Current");
     const first = rows.filter({ hasText: "Revision 1" });
     await expect(first).toContainText("Created the job");
