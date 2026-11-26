@@ -50,7 +50,7 @@ test.describe("pw-chronon-run-now", () => {
     await notice.getByRole("link", { name: "Open the run" }).click();
     await expect(page).toHaveURL(/\/chronon\/runs\/[^/]+$/, { timeout: 60_000 });
     await waitForHydrated(page);
-    await expect(page.getByTestId("run-started-by")).toContainText("admin (Run now)", {
+    await expect(page.getByTestId("run-started-by")).toContainText("Ada Admin (Run now)", {
       timeout: 60_000,
     });
     await expect(page.getByTestId("run-parameters")).toContainText("older_than_days: 14 (stored: 30)");

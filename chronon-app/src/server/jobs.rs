@@ -61,6 +61,17 @@ fn redact_job_params_for_non_admin(job: Job, is_admin: bool) -> Job {
     job
 }
 
+/// Maps a coordinator job and fills Last run from `runs` (which may hold other jobs' runs).
+#[cfg(feature = "ssr")]
+fn with_last_run(
+    job: chronon_coordinator::models::Job,
+    runs: &[chronon_coordinator::models::Run],
+) -> Job {
+    let mut job = backend_job_to_job(job);
+    chronon_backend::fill_last_run(&mut job, runs);
+    job
+}
+
 /// Paginated jobs list with quick-search and structured filters.
 #[uf_product_macros::server]
 pub async fn get_jobs_page(
@@ -73,11 +84,12 @@ pub async fn get_jobs_page(
     let backend = super::ssr_utils::chronon_backend()?;
     let backend = backend.as_ref();
 
+    let runs = super::runs::scan_runs(backend, None).await?;
     let mut jobs: Vec<Job> = backend
         .list_jobs()
         .await
         .into_iter()
-        .map(backend_job_to_job)
+        .map(|j| with_last_run(j, &runs))
         .map(|j| redact_job_params_for_non_admin(j, is_admin))
         .collect();
     chronon_backend::sort_jobs_by_name(&mut jobs);
@@ -108,10 +120,11 @@ pub async fn get_jobs() -> Result<Vec<Job>, ServerFnError> {
     let backend = backend.as_ref();
 
     let jobs = backend.list_jobs().await;
+    let runs = super::runs::scan_runs(backend, None).await?;
 
     let jobs: Vec<Job> = jobs
         .into_iter()
-        .map(backend_job_to_job)
+        .map(|j| with_last_run(j, &runs))
         .map(|j| redact_job_params_for_non_admin(j, is_admin))
         .collect();
 
@@ -180,9 +193,14 @@ pub async fn get_job(
         backend.get_job_by_name(&job_id_or_name).await
     };
 
-    Ok(job
-        .map(backend_job_to_job)
-        .map(|j| redact_job_params_for_non_admin(j, is_admin)))
+    let Some(job) = job else {
+        return Ok(None);
+    };
+    let runs = super::runs::scan_runs(backend, Some(&job.job_id)).await?;
+    Ok(Some(redact_job_params_for_non_admin(
+        with_last_run(job, &runs),
+        is_admin,
+    )))
 }
 
 /// Get all revisions for a job (by ID or name)

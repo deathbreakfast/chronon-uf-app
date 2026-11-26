@@ -303,8 +303,8 @@ pub use runs::{
     actor_is_system, actor_person_id, apply_run_summary_query, coerce_script_param, day_label,
     describe_cron, duration_words, find_run_group, fold_runs, group_runs, if_it_fails_words,
     is_schedule_fire_time, job_week, last_run_of, param_field_text, retry_caption, run_attempts,
-    run_title, runs_caption, schedule_line, started_by, started_by_label, summarize_group,
-    when_words, RunGroup, RunResultFilter, RunTimeFilter, RunsTableFilters,
+    run_now_user_ids, run_title, runs_caption, schedule_line, started_by, started_by_label,
+    summarize_group, when_words, RunGroup, RunResultFilter, RunTimeFilter, RunsTableFilters,
 };
 pub use schedule::{
     actor_label, actor_label_named, actor_user_id, apply_create_schedule,

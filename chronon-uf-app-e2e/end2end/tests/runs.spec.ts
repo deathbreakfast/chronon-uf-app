@@ -36,9 +36,9 @@ test.describe("pw-chronon-runs", () => {
     await page.goto("/chronon/runs?time=any", { waitUntil: "domcontentloaded" });
     await waitForHydrated(page);
     const table = page.getByTestId("chronon-runs-data-table");
-    // The nightly fixture run was started by hand by admin.
+    // The nightly fixture run was started by hand by admin, shown by display name.
     await expect(
-      table.getByRole("row").filter({ hasText: seeded.fixtures.job_name }).filter({ hasText: "admin (Run now)" }).first(),
+      table.getByRole("row").filter({ hasText: seeded.fixtures.job_name }).filter({ hasText: "Ada Admin (Run now)" }).first(),
     ).toBeVisible({ timeout: 60_000 });
   });
 
