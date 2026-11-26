@@ -14,41 +14,14 @@ pub fn build_create_params(
 
     for param in params {
         let raw = values.get(&param.name).map_or("", String::as_str);
-        let trimmed = raw.trim();
-
-        if param.required && trimmed.is_empty() {
-            return Err(format!("Parameter '{}' is required.", param.name));
+        let coerced = chronon_backend::coerce_script_param(&param.param_type, raw, param.required)
+            .map_err(|message| format!("{}: {message}", param.name))?;
+        if let Some(value) = coerced {
+            object.insert(param.name.clone(), value);
         }
-
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        object.insert(
-            param.name.clone(),
-            coerce_param_value(&param.param_type, trimmed)?,
-        );
     }
 
     Ok(serde_json::Value::Object(object))
-}
-
-fn coerce_param_value(param_type: &str, raw: &str) -> Result<serde_json::Value, String> {
-    match param_type {
-        "bool" => raw
-            .parse::<bool>()
-            .map(serde_json::Value::Bool)
-            .map_err(|_| format!("Choose yes or no. You entered {raw}.")),
-        "i8" | "i16" | "i32" | "i64" | "isize" | "u8" | "u16" | "u32" | "u64" | "usize" => raw
-            .parse::<i64>()
-            .map(serde_json::Value::from)
-            .map_err(|_| format!("Enter a whole number, such as 800. You entered {raw}.")),
-        "f32" | "f64" => raw
-            .parse::<f64>()
-            .map(serde_json::Value::from)
-            .map_err(|_| format!("Enter a number, such as 1.5. You entered {raw}.")),
-        _ => Ok(serde_json::Value::String(raw.to_string())),
-    }
 }
 
 /// A script parameter's type in words: "Whole number", "Number", "Yes or no", "Text".
@@ -73,20 +46,12 @@ pub fn build_create_params_by_field(
     let mut object = serde_json::Map::new();
     let mut errors = HashMap::new();
     for param in params {
-        let raw = values.get(&param.name).map_or("", String::as_str).trim();
-        if raw.is_empty() {
-            if param.required {
-                errors.insert(
-                    param.name.clone(),
-                    format!("Enter a value for {}.", param.name),
-                );
-            }
-            continue;
-        }
-        match coerce_param_value(&param.param_type, raw) {
-            Ok(value) => {
+        let raw = values.get(&param.name).map_or("", String::as_str);
+        match chronon_backend::coerce_script_param(&param.param_type, raw, param.required) {
+            Ok(Some(value)) => {
                 object.insert(param.name.clone(), value);
             }
+            Ok(None) => {}
             Err(message) => {
                 errors.insert(param.name.clone(), message);
             }
@@ -163,9 +128,7 @@ pub fn collect_param_values(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_create_params, build_create_params_by_field, coerce_param_value, errors_summary,
-    };
+    use super::{build_create_params, build_create_params_by_field, errors_summary};
 
     #[test]
     fn run_once_instant_converts_to_utc() {
@@ -187,11 +150,8 @@ mod tests {
         values.insert("max_width".to_string(), "wide".to_string());
         let errors = build_create_params_by_field(&defs, &values).expect_err("two errors");
         assert_eq!(errors.len(), 2);
-        assert_eq!(errors["bucket"], "Enter a value for bucket.");
-        assert_eq!(
-            errors["max_width"],
-            "Enter a whole number, such as 800. You entered wide."
-        );
+        assert_eq!(errors["bucket"], "Enter a value.");
+        assert_eq!(errors["max_width"], "Enter a whole number, such as 30.");
         assert_eq!(
             errors_summary(&vec![("a".into(), "x".into()), ("b".into(), "y".into())]),
             "2 fields need a look"
@@ -234,21 +194,6 @@ mod tests {
     fn build_create_params_empty_script_returns_empty_object() {
         let json = build_create_params(&[], &std::collections::HashMap::new()).expect("empty");
         assert_eq!(json, serde_json::json!({}));
-    }
-
-    #[test]
-    fn coerce_param_value_parses_bool() {
-        assert_eq!(
-            coerce_param_value("bool", "false").unwrap(),
-            serde_json::json!(false)
-        );
-    }
-
-    #[test]
-    fn coerce_param_value_rejects_invalid_bool_and_int() {
-        assert!(coerce_param_value("bool", "yes").is_err());
-        assert!(coerce_param_value("i32", "1.5").is_err());
-        assert!(coerce_param_value("f64", "nope").is_err());
     }
 
     #[test]

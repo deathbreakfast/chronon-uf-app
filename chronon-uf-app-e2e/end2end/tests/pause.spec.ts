@@ -15,7 +15,7 @@ test.describe("pw-chronon-pause", () => {
 
     const banner = page.getByTestId("paused-banner");
     await expect(banner).toBeVisible({ timeout: 60_000 });
-    await expect(banner).toContainText("Paused by", { timeout: 60_000 });
+    await expect(banner).toContainText("Paused by Ada Admin", { timeout: 60_000 });
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitForHydrated(page);

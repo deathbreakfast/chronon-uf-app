@@ -250,15 +250,18 @@ impl ChrononCoordinatorBackend for LocalBackend {
         job_id: &str,
         updated: Job,
     ) -> ChrononResult<()> {
-        // Like the Chronon store: the owner stays, the revision counts up, and the
-        // revision records who saved it.
+        // Like the Chronon store: the owner stays, the revision is the one the caller
+        // counted up (`apply_update_payload_to_job`), and history records a revision,
+        // with who saved it, only when that number changed.
         let mut updated = updated;
-        if let Some(existing) = self.get_job(job_id).await {
-            updated.actor_json = existing.actor_json;
-            updated.current_revision = existing.current_revision + 1;
+        let existing = self.get_job(job_id).await;
+        if let Some(existing) = &existing {
+            updated.actor_json.clone_from(&existing.actor_json);
         }
-        let changed_by = chronon_coordinator::snapshot_actor_json(valence)?;
-        self.append_revision(&updated, changed_by);
+        if existing.is_none_or(|e| e.current_revision != updated.current_revision) {
+            let changed_by = chronon_coordinator::snapshot_actor_json(valence)?;
+            self.append_revision(&updated, changed_by);
+        }
         self.store_job(updated);
         Ok(())
     }
@@ -339,6 +342,23 @@ async fn seed_user(id: &str, email_verified: bool, valence: &Valence) {
     lepton::generated::User::upsert(id, user, valence, valence::use_!(r#"**Test:** Fixture **User** save for `e2e_valence` so the suite can arrange and assert persistence behavior. CI and developers running the suite only."#))
         .await
         .expect("upsert user");
+}
+
+/// Gives `id` a Lepton profile so the job pages can show `display_name` instead of the id.
+async fn seed_profile(id: &str, display_name: &str, valence: &Valence) {
+    let now = Utc::now();
+    let profile = lepton::generated::UserProfile::new(
+        valence::RecordId::new("user", id),
+        display_name.to_string(),
+        display_name.to_string(),
+        now,
+        now,
+        None,
+    )
+    .expect("build profile");
+    lepton::generated::UserProfile::create(profile, valence, valence::use_!(r#"**Test:** Fixture **User Profile** save for `e2e_valence` so the suite can assert a person shows by display name. CI and developers running the suite only."#))
+        .await
+        .expect("create profile");
 }
 
 async fn seed_super_user_with_member(system: &Valence, member_user_id: &str) {
@@ -608,6 +628,7 @@ pub async fn init_e2e_valence() {
     seed_user("admin", true, &system).await;
     seed_user("outsider", true, &system).await;
     seed_user("unverified", false, &system).await;
+    seed_profile("admin", "Ada Admin", &system).await;
     seed_super_user_with_member(&system, "admin").await;
 
     sync_permission_manifests(&system, &[chronon_admin_manifest()])

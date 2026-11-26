@@ -78,10 +78,8 @@ test.describe("pw-chronon-jobs-create", () => {
     await expect(page.getByTestId("create-errors-summary")).toContainText("2 fields need a look", {
       timeout: 30_000,
     });
-    await expect(page.getByTestId("param-bucket")).toContainText("Enter a value for bucket.");
-    await expect(page.getByTestId("param-max_width")).toContainText(
-      "Enter a whole number, such as 800. You entered wide.",
-    );
+    await expect(page.getByTestId("param-bucket")).toContainText("Enter a value.");
+    await expect(page.getByTestId("param-max_width")).toContainText("Enter a whole number, such as 30.");
     await expect(page).toHaveURL(/\/chronon\/jobs\/new/);
 
     await page.getByTestId("param-bucket").locator("input").fill("thumbnails");

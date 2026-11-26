@@ -52,3 +52,43 @@ pub(super) async fn persist_updated_job_config(
         .map_err(|e| ServerFnError::new(format!("Failed to update job: {}", e)))?;
     Ok(())
 }
+
+/// Display names for the `User` actors in `actors`, keyed by
+/// [`chronon_backend::actor_user_id`], read from Lepton profiles as the session actor.
+///
+/// A user with no profile, a blank name, or a profile the viewer can't read is left out,
+/// so [`chronon_backend::actor_label_named`] falls back to the user id.
+#[cfg(feature = "ssr")]
+pub(super) async fn actor_display_names<'a>(
+    v: &valence::Valence,
+    actors: impl IntoIterator<Item = &'a serde_json::Value>,
+) -> std::collections::HashMap<String, String> {
+    use lepton::generated::UserProfile;
+    use valence::{RecordId, RecordPredicate};
+
+    let ids: std::collections::BTreeSet<&str> = actors
+        .into_iter()
+        .filter_map(chronon_backend::actor_user_id)
+        .collect();
+    let mut names = std::collections::HashMap::new();
+    for id in ids {
+        let profile = UserProfile::query(
+            v,
+            valence::use_!(r"In **Chronon job details**, we **read the display name on a person's profile** so the paused banner and the Edit schedule conflict message say who paused or last saved the job by name instead of a user id. Only the display name is used, and only where the viewer may already read the profile."),
+        )
+        .where_user(RecordPredicate::Equals(RecordId::new("user", id)))
+        .first()
+        .await;
+        match profile {
+            Ok(Some(profile)) => {
+                let name = profile.display_name().trim();
+                if !name.is_empty() {
+                    names.insert(id.to_string(), name.to_string());
+                }
+            }
+            Ok(None) => {}
+            Err(e) => leptos::logging::warn!("chronon: profile name read failed for {id}: {e}"),
+        }
+    }
+    names
+}

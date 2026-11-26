@@ -2,6 +2,7 @@
 
 use chronon_core::{Job as CoreJob, ScheduleKind};
 use chronon_scheduler::CronExpr;
+use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use crate::map::normalized_params;
@@ -214,7 +215,8 @@ fn stored_pool(pool: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Applies mutable update payload fields to a loaded job model.
+/// Applies mutable update payload fields to a loaded job model and counts
+/// `current_revision` up by one.
 ///
 /// # Errors
 ///
@@ -235,6 +237,9 @@ pub fn apply_update_payload_to_job(
     }
 
     recompute_next_run_for_cron(cron_expr_for_recompute.as_deref(), &mut updated_job)?;
+    // The embedded coordinator stores the revision it is given and records history only
+    // when it changes, so every save counts it up here.
+    updated_job.current_revision = updated_job.current_revision.saturating_add(1);
     updated_job.updated_at = chrono::Utc::now();
     Ok(updated_job)
 }
@@ -893,6 +898,47 @@ pub fn actor_label(actor: &serde_json::Value) -> String {
     "someone".to_string()
 }
 
+/// The user id of a `User` actor snapshot, without a `user:` table prefix.
+///
+/// This is the key [`actor_label_named`] looks names up by.
+///
+/// ```rust
+/// use chronon_backend::actor_user_id;
+///
+/// assert_eq!(actor_user_id(&serde_json::json!({"User": {"user_id": "user:u1"}})), Some("u1"));
+/// assert_eq!(actor_user_id(&serde_json::json!({"System": {"operation": "x"}})), None);
+/// ```
+#[must_use]
+pub fn actor_user_id(actor: &serde_json::Value) -> Option<&str> {
+    let id = actor
+        .get("User")
+        .and_then(|u| u.get("user_id"))
+        .and_then(serde_json::Value::as_str)?;
+    Some(id.strip_prefix("user:").unwrap_or(id))
+}
+
+/// Like [`actor_label`], but a user shows their display name when `names` has one,
+/// keyed by [`actor_user_id`].
+///
+/// ```rust
+/// use std::collections::HashMap;
+/// use chronon_backend::actor_label_named;
+///
+/// let names = HashMap::from([("u1".to_string(), "Ada".to_string())]);
+/// assert_eq!(actor_label_named(&serde_json::json!({"User": {"user_id": "u1"}}), &names), "Ada");
+/// assert_eq!(actor_label_named(&serde_json::json!({"User": {"user_id": "u2"}}), &names), "u2");
+/// ```
+#[must_use]
+pub fn actor_label_named<S: std::hash::BuildHasher>(
+    actor: &serde_json::Value,
+    names: &HashMap<String, String, S>,
+) -> String {
+    actor_user_id(actor)
+        .and_then(|id| names.get(id))
+        .cloned()
+        .unwrap_or_else(|| actor_label(actor))
+}
+
 /// True when a job's actor is the platform System actor.
 #[must_use]
 pub fn is_system_actor(actor: &serde_json::Value) -> bool {
@@ -911,9 +957,10 @@ pub const fn revision_conflict(expected: Option<u32>, current: u32) -> bool {
 /// Finds who paused a job and which runs it skipped.
 ///
 /// `revisions` are `(revision_number, changed_at, actor_json, snapshot_json)` in any order.
+/// The pauser shows by display name when `names` has one (see [`actor_label_named`]).
 /// Returns `None` when the job is enabled or no revision records the pause.
 #[must_use]
-pub fn pause_info_from_revisions(
+pub fn pause_info_from_revisions<S: std::hash::BuildHasher>(
     job: &CoreJob,
     revisions: &[(
         u32,
@@ -922,6 +969,7 @@ pub fn pause_info_from_revisions(
         serde_json::Value,
     )],
     now: chrono::DateTime<chrono::Utc>,
+    names: &HashMap<String, String, S>,
 ) -> Option<PauseInfo> {
     if job.enabled {
         return None;
@@ -950,7 +998,7 @@ pub fn pause_info_from_revisions(
     };
     let start = skipped.len().saturating_sub(5);
     Some(PauseInfo {
-        by: actor_label(actor),
+        by: actor_label_named(actor, names),
         at: at.to_rfc3339(),
         skipped: skipped[start..]
             .iter()
@@ -1180,11 +1228,42 @@ mod describe_tests {
                 serde_json::json!({"enabled": false}),
             ),
         ];
-        let info = pause_info_from_revisions(&job, &revs, t(4, 12)).unwrap();
+        let no_names = HashMap::new();
+        let info = pause_info_from_revisions(&job, &revs, t(4, 12), &no_names).unwrap();
         assert_eq!(info.by, "ops-1");
         assert_eq!(info.at, t(1, 12).to_rfc3339());
         assert_eq!(info.skipped.len(), 3);
+        let names = HashMap::from([("ops-1".to_string(), "Grace Ops".to_string())]);
+        let with_name = pause_info_from_revisions(&job, &revs, t(4, 12), &names).unwrap();
+        assert_eq!(with_name.by, "Grace Ops");
         job.enabled = true;
-        assert!(pause_info_from_revisions(&job, &revs, t(4, 12)).is_none());
+        assert!(pause_info_from_revisions(&job, &revs, t(4, 12), &names).is_none());
+    }
+
+    #[test]
+    fn actor_label_named_falls_back_sad_path() {
+        let names = HashMap::from([("u-1".to_string(), "Ada".to_string())]);
+        assert_eq!(
+            actor_label_named(
+                &serde_json::json!({"User": {"user_id": "user:u-1"}}),
+                &names
+            ),
+            "Ada"
+        );
+        assert_eq!(
+            actor_label_named(&serde_json::json!({"User": {"user_id": "u-9"}}), &names),
+            "u-9"
+        );
+        assert_eq!(
+            actor_label_named(
+                &serde_json::json!({"System": {"operation": "boot"}}),
+                &names
+            ),
+            "the platform"
+        );
+        assert_eq!(
+            actor_label_named(&serde_json::Value::Null, &names),
+            "someone"
+        );
     }
 }

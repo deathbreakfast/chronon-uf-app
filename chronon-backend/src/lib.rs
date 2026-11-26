@@ -307,11 +307,12 @@ pub use runs::{
     when_words, RunGroup, RunResultFilter, RunTimeFilter, RunsTableFilters,
 };
 pub use schedule::{
-    actor_label, apply_create_schedule, apply_update_payload_to_job, build_create_job_model,
-    describe, describe_run_once, is_system_actor, next_runs, parse_run_once_datetime,
-    pause_info_from_revisions, preview_schedule_at, recompute_next_run_for_cron, revision_conflict,
-    schedule_text_for_job, validate_cron, ChrononScheduleError, FieldError, PauseInfo,
-    ScheduleField, SchedulePreview, MANUAL_SCHEDULE_TEXT,
+    actor_label, actor_label_named, actor_user_id, apply_create_schedule,
+    apply_update_payload_to_job, build_create_job_model, describe, describe_run_once,
+    is_system_actor, next_runs, parse_run_once_datetime, pause_info_from_revisions,
+    preview_schedule_at, recompute_next_run_for_cron, revision_conflict, schedule_text_for_job,
+    validate_cron, ChrononScheduleError, FieldError, PauseInfo, ScheduleField, SchedulePreview,
+    MANUAL_SCHEDULE_TEXT,
 };
 pub use types::{
     CreateJobRequest, CreateJobScheduleType, DashboardChartPoint, DashboardChartSeries,
