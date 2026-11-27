@@ -10,6 +10,7 @@ use orbital::primitives::{
     Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, Flex, MessageBar,
     MessageBarBody, MessageBarIntent, Tab, TabList,
 };
+use uf_product::access::{AccessCard, AccessDenied};
 
 use super::actions::{
     make_cancel_callback, make_edit_callback, make_save_callback, open_run_now, JobDetailFormState,
@@ -49,7 +50,10 @@ pub(super) struct JobPageCtx {
     pub is_editing: RwSignal<bool>,
 }
 
-const TABS: [&str; 3] = ["overview", "runs", "history"];
+const TABS: [&str; 4] = ["overview", "runs", "history", "access"];
+
+/// What the denied state says View would let the reader do on this page.
+const VIEW_PURPOSE: &str = "see this job's runs, parameters and output";
 
 /// Reactive body for a successfully loaded job.
 #[allow(clippy::too_many_lines)]
@@ -72,9 +76,11 @@ pub(super) fn JobDetailLoaded(
     let access = RwSignal::new(ChrononJobAccess::default());
     let pause_info = RwSignal::new(None::<PauseInfo>);
 
+    let access_id = StoredValue::new(job_id.clone());
     Effect::new(move |_| {
+        let id = access_id.get_value();
         leptos::task::spawn_local_scoped(async move {
-            if let Ok(a) = get_job_access().await {
+            if let Ok(a) = get_job_access(Some(id)).await {
                 access.set(a);
             }
         });
@@ -192,11 +198,22 @@ pub(super) fn JobDetailLoaded(
         open_run_now(run_now_dialog_open, run_now_loading);
     });
 
-    let job_id_overview = job_id.clone();
-    let job_id_banner = job_id.clone();
+    let job_id_overview = StoredValue::new(job_id.clone());
+    let job_id_banner = StoredValue::new(job_id.clone());
     let job_id_for_dialog = job_id.clone();
-    let job_id_runs = job_id;
+    let job_id_runs = StoredValue::new(job_id);
     let job_name = Signal::derive(move || job_sig.with(|j| j.name.clone()));
+    // Runs, parameters and output need View; the name, owner and schedule never do.
+    let can_view = Signal::derive(move || access.with(|a| a.can_view));
+    let access_known = Signal::derive(move || access.with(|a| !a.role.is_empty()));
+    let resource = StoredValue::new(crate::permissions::job_ref_for(&job_sig.get_untracked()));
+    let denied = move || {
+        view! {
+            <Show when=move || access_known.get()>
+                <AccessDenied resource=resource.get_value() action="View" purpose=VIEW_PURPOSE />
+            </Show>
+        }
+    };
 
     view! {
         <Flex vertical=true gap=SpacingSize::Size160.flex_gap()>
@@ -230,6 +247,7 @@ pub(super) fn JobDetailLoaded(
                     <Tab value="overview">"Overview"</Tab>
                     <Tab value="runs">"Runs"</Tab>
                     <Tab value="history">"History"</Tab>
+                    <Tab value="access">"Access"</Tab>
                 </TabList>
             </div>
 
@@ -243,42 +261,52 @@ pub(super) fn JobDetailLoaded(
                             </MessageBar>
                         </div>
                     </Show>
-                    <FailingBanner job_id=job_id_banner refresh_signal=runs_refresh_signal />
+                    <Show when=move || can_view.get()>
+                        <FailingBanner job_id=job_id_banner.get_value() refresh_signal=runs_refresh_signal />
+                    </Show>
                     <PausedBanner ctx=ctx />
                     <ScheduleCard ctx=ctx />
-                    <div data-testid="job-overview-recent-runs">
-                        <Show when=move || tab.get() != "runs">
-                            <JobRecentRuns job_id=job_id_overview.clone() refresh_signal=runs_refresh_signal />
+                    <Show when=move || can_view.get() fallback=denied>
+                        <div data-testid="job-overview-recent-runs">
+                            <Show when=move || tab.get() != "runs">
+                                <JobRecentRuns job_id=job_id_overview.get_value() refresh_signal=runs_refresh_signal />
+                            </Show>
+                        </div>
+                        <Show
+                            when=move || is_editing.get()
+                            fallback=move || view! { <JobInfoCard ctx=ctx script_params=script_params on_edit=on_edit /> }
+                        >
+                            <JobEditForm
+                                form=form
+                                ctx=ctx
+                                script_params=script_params
+                                save_loading=save_loading
+                                save_error=save_error
+                                on_save=on_save
+                                on_cancel=on_cancel
+                            />
                         </Show>
-                    </div>
-                    <Show
-                        when=move || is_editing.get()
-                        fallback=move || view! { <JobInfoCard ctx=ctx script_params=script_params on_edit=on_edit /> }
-                    >
-                        <JobEditForm
-                            form=form
-                            ctx=ctx
-                            script_params=script_params
-                            save_loading=save_loading
-                            save_error=save_error
-                            on_save=on_save
-                            on_cancel=on_cancel
-                        />
                     </Show>
                 </Flex>
             </div>
             <div data-testid="job-tab-runs" hidden=move || tab.get() != "runs">
                 // Mounted only on this tab, so the page never holds two runs cards.
                 <Show when=move || tab.get() == "runs">
-                    <JobRecentRuns
-                        job_id=job_id_runs.clone()
-                        refresh_signal=runs_refresh_signal
-                        show_filters=true
-                    />
+                    <Show when=move || can_view.get() fallback=denied>
+                        <JobRecentRuns
+                            job_id=job_id_runs.get_value()
+                            refresh_signal=runs_refresh_signal
+                            show_filters=true
+                        />
+                    </Show>
                 </Show>
             </div>
             <div data-testid="job-tab-history" hidden=move || tab.get() != "history">
                 <Caption1>"Revision history for this job will appear here."</Caption1>
+            </div>
+            // Mounted with the page like the other panels, so opening the tab doesn't reload it.
+            <div data-testid="job-tab-access" hidden=move || tab.get() != "access">
+                <AccessCard resource=resource.get_value() />
             </div>
         </Flex>
 

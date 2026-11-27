@@ -67,6 +67,7 @@ mod tests {
             last_run_attempts: None,
             owner_label: String::new(),
             system_owned: false,
+            your_access: String::new(),
             concurrency: 1,
             timeout_ms: None,
             retry_max_attempts: 0,

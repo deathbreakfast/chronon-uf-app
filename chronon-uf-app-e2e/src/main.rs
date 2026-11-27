@@ -11,7 +11,7 @@ use axum::extract::Extension;
 use axum::middleware::from_fn;
 use axum::routing::{get, post};
 use axum::Router;
-use chronon_uf_app_e2e::seed::seed_data;
+use chronon_uf_app_e2e::seed::{approve_requests, hold_runs, release_runs, seed_data};
 use chronon_uf_app_e2e::{
     e2e_chronon_backend, e2e_higgs_config, e2e_pool_provider, e2e_registry, e2e_router,
     init_e2e_valence, inject_e2e_session_snapshot, shell, wire_gauge_permissions_bridge, App,
@@ -60,6 +60,9 @@ async fn serve() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(|| async { axum::http::StatusCode::OK }))
         .route("/api/test/seed-data", post(seed_data))
+        .route("/api/test/runs/hold", post(hold_runs))
+        .route("/api/test/runs/release", post(release_runs))
+        .route("/api/test/gauge/approve-requests", post(approve_requests))
         .nest_service("/pkg", ServeDir::new(pkg_dir))
         .nest_service("/fonts", ServeDir::new(fonts_dir))
         .leptos_routes_with_context(

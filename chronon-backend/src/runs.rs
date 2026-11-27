@@ -15,7 +15,7 @@ use chronon_scheduler::CronExpr;
 use orbital_paging::{FilterQuery, PageRequest};
 use serde_json::Value;
 
-use crate::map::chronon_run_status_to_ui;
+use crate::map::run_status_of;
 use crate::schedule::actor_user_id;
 use crate::types::{
     DayResult, JobWeek, JobWeekDay, LastRunFailure, RunAttempt, RunSummary, StartedBy,
@@ -228,11 +228,12 @@ pub fn summarize_group<S: BuildHasher>(
         root_run_id: root.run_id.clone(),
         job_id: root.job_id.clone().unwrap_or_default(),
         job_name: job.map_or_else(|| root.script_name.clone(), |j| j.job_name.clone()),
-        result: chronon_run_status_to_ui(last.status),
+        result: run_status_of(last),
         attempts: u32::try_from(group.len()).unwrap_or(u32::MAX),
         started_at: started_time(root).to_rfc3339(),
         duration_ms,
         started_by: started_by(root, &root.run_id, job, names),
+        refused_action: crate::access::run_refusal(last).map(|r| r.action),
         params: root.params_json.clone(),
     })
 }
@@ -272,7 +273,7 @@ pub fn run_attempts(group: &[&CoreRun]) -> Vec<RunAttempt> {
                 format!("Retry {i}")
             },
             started_at: started_time(r).to_rfc3339(),
-            result: chronon_run_status_to_ui(r.status),
+            result: run_status_of(r),
             duration_ms: duration_u64(r.duration_ms),
         })
         .collect()
@@ -795,10 +796,7 @@ pub fn last_run_of(runs: &[CoreRun]) -> Option<(String, crate::RunStatus)> {
     let group = groups.first()?;
     let root = group.first()?;
     let last = group.last()?;
-    Some((
-        started_time(root).to_rfc3339(),
-        chronon_run_status_to_ui(last.status),
-    ))
+    Some((started_time(root).to_rfc3339(), run_status_of(last)))
 }
 
 #[cfg(test)]

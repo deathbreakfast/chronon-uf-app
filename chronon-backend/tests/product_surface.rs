@@ -123,40 +123,75 @@ fn layout_missing_nav_sad_path() {
     }
 }
 
+/// Body of `pub async fn {name}` up to the next server fn attribute.
+fn fn_body<'a>(src: &'a str, name: &str) -> &'a str {
+    let start = src
+        .find(&format!("pub async fn {name}("))
+        .unwrap_or_else(|| panic!("server missing `{name}`"));
+    let rest = &src[start..];
+    let end = rest[1..]
+        .find("#[uf_product_macros::server")
+        .map_or(rest.len(), |i| i + 1);
+    &rest[..end]
+}
+
 #[test]
-fn admin_mutators_require_chronon_admin_happy_path() {
+fn job_actions_check_the_jobs_own_access_happy_path() {
     let jobs = read_app("server/jobs.rs");
     let runs = read_app("server/runs.rs");
-    let combined = format!("{jobs}\n{runs}");
-
-    for fn_name in ["create_job", "update_job", "run_job_now"] {
+    let access = read_app("server/access.rs");
+    assert!(
+        access.contains("uf_product::access::require("),
+        "per-job checks go through uf_product::access::require as the session actor"
+    );
+    assert!(
+        fn_body(&runs, "run_job_now").contains(r#"require_job(&job, "Run")"#),
+        "Run now and Run again need Run on the job"
+    );
+    assert!(
+        jobs.contains(r#"require_job(&existing_job, "Edit")"#),
+        "edits, pause and resume need Edit on the job (save_job_update)"
+    );
+    for name in ["update_job", "set_job_paused"] {
         assert!(
-            combined.contains(fn_name),
-            "server missing admin surface `{fn_name}`"
+            fn_body(&jobs, name).contains("save_job_update("),
+            "`{name}` must save through save_job_update so the Edit check runs"
         );
     }
-    let admin_attr = r#"permission = "ChrononAdmin""#;
     assert!(
-        combined.matches(admin_attr).count() >= 3,
-        "create / update / run_now server fns must carry ChrononAdmin permission attribute"
+        fn_body(&jobs, "get_job_revisions").contains(r#"require_job(&job, "View")"#),
+        "revisions need View on the job"
+    );
+    let create_attr = r#"#[uf_product_macros::server(permission = "ChrononAdmin")]
+pub async fn create_job("#;
+    assert!(
+        jobs.contains(create_attr),
+        "creating jobs stays a ChrononAdmin action"
     );
 }
 
 #[test]
-fn admin_mutators_drop_chronon_admin_sad_path() {
+fn job_actions_drop_per_job_check_sad_path() {
     let jobs = read_app("server/jobs.rs");
     let runs = read_app("server/runs.rs");
     let combined = format!("{jobs}\n{runs}");
-    let admin_attr = r#"permission = "ChrononAdmin""#;
     assert!(
-        combined.matches(admin_attr).count() >= 3,
-        "dropping ChrononAdmin from create/update/run_now opens mutating ops without admin gate"
+        !fn_body(&runs, "run_job_now").contains("You can't run this job"),
+        "run_job_now must refuse through the per-job denial, not a coarse admin message"
     );
     assert!(
         !combined.contains(r#"permission = "GaugeAdmin""#)
             && !combined.contains(r#"permission = "BosonAdmin""#)
             && !combined.contains(r#"permission = "PhotonAdmin""#),
-        "Chronon admin mutators must not gate on GaugeAdmin, BosonAdmin, or PhotonAdmin"
+        "Chronon server fns must not gate on GaugeAdmin, BosonAdmin, or PhotonAdmin"
+    );
+    assert!(
+        !fn_body(&runs, "run_job_now").contains(r#"permission = "ChrononAdmin""#)
+            && !runs.contains(
+                r#"#[uf_product_macros::server(permission = "ChrononAdmin")]
+pub async fn run_job_now("#
+            ),
+        "run_job_now is gated per job, not by ChrononAdmin"
     );
 }
 

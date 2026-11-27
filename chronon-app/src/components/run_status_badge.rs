@@ -15,6 +15,7 @@ pub fn RunStatusBadge(
         RunStatus::Completed => ("Completed", BadgeAppearance::Filled),
         RunStatus::Failed => ("Failed", BadgeAppearance::Filled),
         RunStatus::Cancelled => ("Cancelled", BadgeAppearance::Outline),
+        RunStatus::Refused => ("Refused", BadgeAppearance::Tint),
     };
 
     let color = match status {
@@ -22,7 +23,7 @@ pub fn RunStatusBadge(
         RunStatus::Running => BadgeColor::Brand,
         RunStatus::Completed => BadgeColor::Success,
         RunStatus::Failed => BadgeColor::Danger,
-        RunStatus::Cancelled => BadgeColor::Warning,
+        RunStatus::Cancelled | RunStatus::Refused => BadgeColor::Warning,
     };
 
     view! {

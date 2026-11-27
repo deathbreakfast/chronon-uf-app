@@ -15,7 +15,7 @@ pub fn ChrononJobsPage() -> impl IntoView {
     let can_create = RwSignal::new(false);
     Effect::new(move |_| {
         leptos::task::spawn_local_scoped(async move {
-            if let Ok(access) = get_job_access().await {
+            if let Ok(access) = get_job_access(None).await {
                 can_create.set(access.can_create);
             }
         });

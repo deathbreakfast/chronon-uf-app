@@ -130,6 +130,7 @@
 //!     timeout_seconds: 60,
 //!     max_retries: 0,
 //!     pool: None,
+//!     owned_by: None,
 //! };
 //! assert!(matches!(
 //!     build_create_job_model(&payload, "sig".into()),
@@ -239,6 +240,7 @@
 //!     last_run_attempts: None,
 //!     owner_label: String::new(),
 //!     system_owned: false,
+//!     your_access: String::new(),
 //!     concurrency: 1,
 //!     timeout_ms: None,
 //!     retry_max_attempts: 0,
@@ -264,6 +266,7 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+mod access;
 mod dashboard;
 mod lookup;
 mod map;
@@ -275,6 +278,10 @@ mod schedule;
 mod types;
 mod validate;
 
+pub use access::{
+    core_job_resource_id, job_resource_id, parse_refused, refused_note, refused_text,
+    run_error_message, run_refusal, RunRefusal, CHRONON_JOB_KIND, REFUSED_PREFIX,
+};
 pub use dashboard::{
     align_run_bucket, dashboard_stats_from_jobs_and_runs, run_bucket_granularity,
     run_stats_series_from_runs, utc_start_of_day, RunBucketGranularity,
@@ -286,7 +293,7 @@ pub use lookup::{
 pub use map::{
     backend_job_to_job, chronon_run_status_to_ui, fill_last_run, job_status_label,
     model_run_to_app_run, normalized_params, parse_script_params, recent_run_from_model,
-    run_status_label,
+    run_status_label, run_status_of,
 };
 pub use page_query::{
     apply_jobs_page_query, apply_runs_page_query, apply_scripts_page_query,

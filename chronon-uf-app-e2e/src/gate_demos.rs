@@ -14,6 +14,8 @@ pub const E2E_ADMIN_USER: &str = "user:admin";
 pub const E2E_OUTSIDER_USER: &str = "user:outsider";
 #[cfg(feature = "ssr")]
 pub const E2E_UNVERIFIED_USER: &str = "user:unverified";
+#[cfg(feature = "ssr")]
+pub const E2E_MEMBER_USER: &str = "user:member";
 
 /// Session kinds for Playwright seed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,6 +28,8 @@ pub enum E2eAuthKind {
     Outsider,
     /// Authenticated but email unverified (holds ChrononAdmin for server-fn sad paths).
     Unverified,
+    /// Verified user on the Platform ops team, without ChrononAdmin.
+    Member,
 }
 
 impl E2eAuthKind {
@@ -35,6 +39,7 @@ impl E2eAuthKind {
             Self::Admin => "admin",
             Self::Outsider => "outsider",
             Self::Unverified => "unverified",
+            Self::Member => "member",
         }
     }
 
@@ -43,6 +48,7 @@ impl E2eAuthKind {
             "admin" | "authenticated_verified" => Self::Admin,
             "outsider" => Self::Outsider,
             "unverified" | "authenticated_unverified" => Self::Unverified,
+            "member" => Self::Member,
             _ => Self::Anonymous,
         }
     }
@@ -54,6 +60,7 @@ impl E2eAuthKind {
             Self::Admin => Some(E2E_ADMIN_USER),
             Self::Outsider => Some(E2E_OUTSIDER_USER),
             Self::Unverified => Some(E2E_UNVERIFIED_USER),
+            Self::Member => Some(E2E_MEMBER_USER),
         }
     }
 
@@ -83,6 +90,14 @@ impl E2eAuthKind {
                 avatar_url: None,
                 roles: vec!["user".into()],
                 email_verified: false,
+            }),
+            Self::Member => AuthSession::Authenticated(AuthenticatedUser {
+                user_id: "member".into(),
+                email: Some("member@example.com".into()),
+                display_name: Some("Member".into()),
+                avatar_url: None,
+                roles: vec!["user".into()],
+                email_verified: true,
             }),
         }
     }
@@ -154,6 +169,18 @@ pub async fn write_e2e_auth_kind(
         .insert(E2E_AUTH_KEY, kind.as_str().to_string())
         .await
         .map_err(|e| anyhow::anyhow!(e.to_string()))
+}
+
+/// The e2e auth kind stored on this session (Anonymous when none).
+#[cfg(feature = "ssr")]
+pub async fn read_e2e_auth_kind(session: &tower_sessions::Session) -> E2eAuthKind {
+    session
+        .get::<String>(E2E_AUTH_KEY)
+        .await
+        .ok()
+        .flatten()
+        .map(|raw| E2eAuthKind::parse(&raw))
+        .unwrap_or(E2eAuthKind::Anonymous)
 }
 
 /// Mirror e2e tower-session into higgs_identity::SessionSnapshot.

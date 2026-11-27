@@ -2,6 +2,7 @@
 
 use chronon_core::{Job as CoreJob, Run as CoreRun, RunStatus as CoreRunStatus};
 
+use crate::access::run_refusal;
 use crate::schedule::{actor_label, is_system_actor, schedule_text_for_job};
 use crate::types::{Job, JobStatus, RecentRun, Run, RunStatus, ScriptParam};
 
@@ -44,6 +45,7 @@ pub fn backend_job_to_job(j: CoreJob) -> Job {
         last_run_attempts: None,
         owner_label,
         system_owned,
+        your_access: String::new(),
         concurrency,
         timeout_ms,
         retry_max_attempts,
@@ -78,6 +80,17 @@ pub const fn chronon_run_status_to_ui(s: CoreRunStatus) -> RunStatus {
     }
 }
 
+/// The UI status of one stored run: a failed run that was refused when it started reads as
+/// [`RunStatus::Refused`].
+#[must_use]
+pub fn run_status_of(run: &CoreRun) -> RunStatus {
+    if run_refusal(run).is_some() {
+        RunStatus::Refused
+    } else {
+        chronon_run_status_to_ui(run.status)
+    }
+}
+
 fn duration_ms_u64(duration_ms: Option<i64>) -> Option<u64> {
     duration_ms.and_then(|d| u64::try_from(d).ok())
 }
@@ -85,11 +98,12 @@ fn duration_ms_u64(duration_ms: Option<i64>) -> Option<u64> {
 /// Maps a core run onto the UI-facing run DTO with a resolved job name.
 #[must_use]
 pub fn model_run_to_app_run(m: CoreRun, job_name: String) -> Run {
+    let status = run_status_of(&m);
     Run {
         id: m.run_id,
         job_id: m.job_id.unwrap_or_default(),
         job_name,
-        status: chronon_run_status_to_ui(m.status),
+        status,
         started_at: m
             .started_at
             .map_or_else(|| m.scheduled_for.to_rfc3339(), |t| t.to_rfc3339()),
@@ -111,7 +125,7 @@ pub fn recent_run_from_model(m: &CoreRun, job_name: String) -> RecentRun {
     RecentRun {
         id: m.run_id.clone(),
         job_name,
-        status: chronon_run_status_to_ui(m.status),
+        status: run_status_of(m),
         started_at: m
             .started_at
             .map_or_else(|| m.scheduled_for.to_rfc3339(), |dt| dt.to_rfc3339()),
@@ -174,5 +188,6 @@ pub const fn run_status_label(status: RunStatus) -> &'static str {
         RunStatus::Completed => "completed",
         RunStatus::Failed => "failed",
         RunStatus::Cancelled => "cancelled",
+        RunStatus::Refused => "refused",
     }
 }

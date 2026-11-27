@@ -40,16 +40,19 @@ test.describe("pw-chronon-jobs", () => {
     await expect(cell).not.toContainText("\u2014");
   });
 
-  test("pw-chronon-jobs-sad-outsider-no-owner-or-schedule", async ({ page }) => {
+  test("pw-chronon-jobs-sad-outsider-sees-schedule-not-runs", async ({ page }) => {
     const seeded = await seedAuth(page, "outsider");
     await page.goto(`/chronon/jobs/${encodeURIComponent(seeded.fixtures.job_id)}`, {
       waitUntil: "domcontentloaded",
     });
     await waitForHydrated(page);
+    // Name, owner and schedule stay readable so people can ask; runs and parameters don't.
     const caption = page.getByTestId("job-header-caption");
     await expect(caption).toContainText("Script", { timeout: 60_000 });
-    await expect(caption).not.toContainText("Owner:");
-    await expect(page.getByTestId("schedule-card-sentence")).toHaveText("Hidden");
+    await expect(caption).toContainText("Owner:");
+    await expect(page.getByTestId("schedule-card-sentence")).not.toHaveText("Hidden");
+    await expect(page.getByTestId("access-denied").first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("job-overview-recent-runs")).toHaveCount(0);
   });
 
   test("pw-chronon-jobs-sad-unknown-job", async ({ page }) => {

@@ -18,6 +18,7 @@ async-trait = { workspace = true, optional = true }
 axum = { workspace = true, optional = true, default-features = true, features = ["tokio", "http1", "json"] }
 chrono = { workspace = true, optional = true }
 chronon-app = { path = "../chronon-app", default-features = false }
+chronon-backend = { path = "../chronon-backend" }
 chronon-coordinator = { workspace = true, optional = true }
 chronon-core = { workspace = true, optional = true }
 chronon-executor = { workspace = true, optional = true }

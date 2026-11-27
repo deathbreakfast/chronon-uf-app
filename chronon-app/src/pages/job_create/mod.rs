@@ -18,8 +18,8 @@ use crate::server::{
     SchedulePreview, Script, DEFAULT_POOL,
 };
 use components::{
-    ActionsSection, AdvancedOptionsSection, BasicInfoSection, ParametersSection, RunOnceFields,
-    ScheduleSection,
+    ActionsSection, AdvancedOptionsSection, BasicInfoSection, OwnedBySection, ParametersSection,
+    RunOnceFields, ScheduleSection,
 };
 use form_state::{
     build_create_params_by_field, collect_param_values, errors_summary, run_once_instant,
@@ -78,6 +78,7 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
     let show_advanced = RwSignal::new(false);
     let concurrency = RwSignal::new(String::from("1"));
     let timeout_seconds = RwSignal::new(String::from("300"));
+    let owned_by = RwSignal::new(String::new());
     let max_retries = RwSignal::new(String::from("3"));
     let pool = RwSignal::new(String::from(DEFAULT_POOL));
     let create_loading = RwSignal::new(false);
@@ -207,6 +208,7 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
             timeout_seconds: timeout_seconds.get().parse::<u32>().unwrap_or(300),
             max_retries: max_retries.get().parse::<u32>().unwrap_or(3),
             pool: Some(pool.get()),
+            owned_by: Some(owned_by.get()).filter(|g| !g.is_empty()),
         };
 
         leptos::task::spawn_local_scoped(async move {
@@ -291,6 +293,10 @@ pub fn ChrononJobCreatePage() -> impl IntoView {
                         run_once=run_once
                         errors=errors_signal
                     />
+                    </div>
+
+                    <div id="chronon-job-create-owned-by">
+                    <OwnedBySection owned_by=owned_by />
                     </div>
 
                     <div id="chronon-job-create-advanced">

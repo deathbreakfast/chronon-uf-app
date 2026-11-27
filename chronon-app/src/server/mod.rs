@@ -5,11 +5,13 @@
 //! DTOs and pure mapping helpers live in [`chronon_backend`] so contracts stay
 //! unit/integration-testable without the host UI graph. Server functions run on
 //! SSR only and use [`higgs::Higgs::from_request()`] plus [`ssr_utils::require_session`]
-//! on every endpoint. Mutators `create_job` / `update_job` / `run_job_now` require
-//! Gauge permission `ChrononAdmin`. Job list/detail stay session-gated but omit
-//! job `params` unless the session holds `ChrononAdmin`. Run history, revisions,
-//! and dashboard run aggregates require `ChrononAdmin`. Job CRUD additionally
-//! mirrors the UI email-verification gate via [`ssr_utils::require_email_verified`].
+//! on every endpoint. Each job has its own access, checked as the session actor through
+//! `uf_product::access::require`: View for its runs, revisions and parameters, Run for
+//! `run_job_now` (Run now and Run again), Edit for `update_job` and `set_job_paused`.
+//! `create_job` needs Gauge permission `ChrononAdmin`. The jobs list shows every job with
+//! the reader's role and hides parameters without View; run lists and dashboard
+//! aggregates keep only jobs the reader can view. Job CRUD additionally mirrors the UI
+//! email-verification gate via [`ssr_utils::require_email_verified`].
 //!
 //! ## Errors
 //!
@@ -23,6 +25,8 @@
 //! A job pool the host's [`chronon_backend::ChrononPoolProvider`] does not offer
 //! fails create/update with `Pool '…' is not offered by this host`.
 
+#[cfg(feature = "ssr")]
+mod access;
 mod dashboard;
 mod helpers;
 mod jobs;
@@ -35,11 +39,13 @@ mod scripts;
 mod ssr_utils;
 mod types;
 
+#[cfg(feature = "ssr")]
+pub use access::ChrononAdminGroup;
 pub use dashboard::{get_dashboard_stats, get_recent_runs, get_run_stats_series};
 pub use jobs::{
-    can_create_job, can_edit_job, can_run_job, create_job, get_job, get_job_access,
-    get_job_pause_info, get_job_revisions, get_jobs, get_jobs_page, list_chronon_job_pools,
-    preview_schedule, set_job_paused, update_job, ChrononJobAccess,
+    can_create_job, create_job, get_job, get_job_access, get_job_pause_info, get_job_revisions,
+    get_jobs, get_jobs_page, get_owned_by_options, list_chronon_job_pools, preview_schedule,
+    set_job_paused, update_job, ChrononJobAccess, OwnedByOption, OwnedByOptions,
 };
 pub use runs::{
     get_job_runs_page, get_job_week, get_run, get_run_attempts, get_run_detail, get_run_now_facts,
@@ -48,6 +54,6 @@ pub use runs::{
 pub use scripts::{get_scripts, get_scripts_page};
 pub use types::*;
 
-/// Permission name required for Chronon admin mutators
+/// Permission name required to create jobs
 /// (manifest: [`crate::permissions::ChrononPermission::ChrononAdmin`]).
 pub const CHRONON_ADMIN_PERMISSION: &str = "ChrononAdmin";

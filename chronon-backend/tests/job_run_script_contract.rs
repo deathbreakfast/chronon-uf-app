@@ -32,6 +32,7 @@ fn sample_job(name: &str, script: &str, status: JobStatus) -> Job {
         last_run_attempts: None,
         owner_label: String::new(),
         system_owned: false,
+        your_access: String::new(),
         concurrency: 1,
         timeout_ms: None,
         retry_max_attempts: 0,
@@ -182,6 +183,7 @@ fn create_job_manual_schedule_happy_path() {
         timeout_seconds: 30,
         max_retries: 1,
         pool: None,
+        owned_by: None,
     };
     let job = build_create_job_model(&payload, "sig".into()).expect("create");
     let ui = backend_job_to_job(job);
@@ -205,6 +207,7 @@ fn create_job_run_once_schedule_happy_path() {
         timeout_seconds: 60,
         max_retries: 0,
         pool: None,
+        owned_by: None,
     };
     let job = build_create_job_model(&payload, "sig".into()).expect("create");
     assert!(job.run_once_at.is_some());
@@ -225,6 +228,7 @@ fn create_job_empty_run_once_sad() {
         timeout_seconds: 60,
         max_retries: 0,
         pool: None,
+        owned_by: None,
     };
     let err = build_create_job_model(&payload, "sig".into()).expect_err("empty run-once");
     assert!(matches!(

@@ -73,7 +73,7 @@ package-scoped fmt is the honest local gate.
 Full workspace clippy/test may still fail when the sibling `uf-product` /
 `uf-integrations` UI graph does not compile — that is a host-product UI issue,
 not a Chronon backend contract gap. Surface needles for routes, nav testids,
-`RequireAuthenticated`, and `ChrononAdmin` live in `product_surface` (structural
+`RequireAuthenticated`, and the per-job access checks live in `product_surface` (structural
 secondary; Layer 2 is primary for operator UI).
 
 ```bash

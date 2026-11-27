@@ -43,6 +43,7 @@ pub fn job_to_record(job: Job) -> DataRecord {
             ),
             ("next_run".into(), text(job.next_run_at)),
             ("timezone".into(), text(job.timezone)),
+            ("your_access".into(), DataValue::Text(job.your_access)),
         ]),
     )
 }
