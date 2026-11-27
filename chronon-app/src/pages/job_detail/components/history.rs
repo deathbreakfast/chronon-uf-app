@@ -27,11 +27,12 @@ fn saved_at_label(changed_at: &str) -> String {
     )
 }
 
-/// History tab body. Revisions load once per saved revision of the job; picking a row only
-/// changes which revision the diff shows, so nothing reloads.
+/// History tab body, mounted only for readers with View on the job. Revisions load once per
+/// saved revision of the job; picking a row only changes which revision the diff shows, so
+/// nothing reloads.
 #[component]
 pub fn JobHistory(
-    /// Shared job page state (job id, current revision, access).
+    /// Shared job page state (job id and current revision).
     ctx: JobPageCtx,
 ) -> impl IntoView {
     let revisions = RwSignal::new(None::<Result<Vec<JobRevision>, String>>);
@@ -81,23 +82,10 @@ pub fn JobHistory(
                 </CardHeader>
                 <CardContent>
                     <Flex vertical=true gap=SpacingSize::Size120.flex_gap()>
-                        {move || revisions.get().and_then(Result::err).map(|e| {
-                            // Revisions need ChrononAdmin today; say so rather than show the raw refusal.
-                            if ctx.access.with(|a| a.can_edit) {
-                                view! {
-                                    <MessageBar intent=MessageBarIntent::Error>
-                                        <MessageBarBody>{format!("Couldn't load the revisions: {e}")}</MessageBarBody>
-                                    </MessageBar>
-                                }.into_any()
-                            } else {
-                                view! {
-                                    <MessageBar intent=MessageBarIntent::Info>
-                                        <MessageBarBody>
-                                            "Only Chronon admins can see this job's revisions."
-                                        </MessageBarBody>
-                                    </MessageBar>
-                                }.into_any()
-                            }
+                        {move || revisions.get().and_then(Result::err).map(|e| view! {
+                            <MessageBar intent=MessageBarIntent::Error>
+                                <MessageBarBody>{format!("Couldn't load the revisions: {e}")}</MessageBarBody>
+                            </MessageBar>
                         })}
                         <div data-testid="job-history-table">
                         <Table>

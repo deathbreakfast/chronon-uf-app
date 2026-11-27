@@ -302,7 +302,9 @@ pub(super) fn JobDetailLoaded(
                 </Show>
             </div>
             <div data-testid="job-tab-history" hidden=move || tab.get() != "history">
-                <JobHistory ctx=ctx />
+                <Show when=move || can_view.get() fallback=denied>
+                    <JobHistory ctx=ctx />
+                </Show>
             </div>
             // Mounted with the page like the other panels, so opening the tab doesn't reload it.
             <div data-testid="job-tab-access" hidden=move || tab.get() != "access">

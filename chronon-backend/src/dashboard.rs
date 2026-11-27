@@ -85,7 +85,7 @@ pub fn dashboard_stats_from_jobs_and_runs(
             .filter(|j| {
                 newest
                     .get(j.job_id.as_str())
-                    .is_some_and(|g| g.last().is_some_and(|r| is_failed(r.status)))
+                    .is_some_and(|g| g.last().is_some_and(|r| job_failed(r)))
             })
             .count(),
     );
@@ -116,11 +116,17 @@ fn worked_permille(groups: &[RunGroup<'_>], since: DateTime<Utc>) -> Option<u32>
         if matches!(last.status, CoreRunStatus::Success) {
             worked += 1;
             finished += 1;
-        } else if is_failed(last.status) {
+        } else if job_failed(last) {
             finished += 1;
         }
     }
     (finished > 0).then(|| u32::try_from((worked * 1000 + finished / 2) / finished).unwrap_or(1000))
+}
+
+/// True when the run failed on its own. A run refused when it started (the starter no
+/// longer held Run) never ran, so it isn't a failure of the job.
+fn job_failed(run: &CoreRun) -> bool {
+    is_failed(run.status) && crate::access::run_refusal(run).is_none()
 }
 
 /// Each job's newest run (first attempt and retries), keyed by job id.
@@ -206,7 +212,7 @@ fn next_scheduled_run(job: &CoreJob, now: DateTime<Utc>) -> Option<DateTime<Utc>
 fn failed_item(job: &CoreJob, group: &RunGroup<'_>, now: DateTime<Utc>) -> Option<AttentionItem> {
     let root = *group.first()?;
     let last = *group.last()?;
-    if !is_failed(last.status) {
+    if !job_failed(last) {
         return None;
     }
     let retries = group.len() - 1;
@@ -704,6 +710,20 @@ mod attention_tests {
         ));
         let attention = attention_from(&jobs, &runs, &HashMap::new(), now(), TICK);
         assert!(attention.items.is_empty(), "{:?}", attention.items);
+    }
+
+    #[test]
+    fn attention_refused_run_is_not_a_failure_sad() {
+        let jobs = [job("purge-expired-sessions", "0 3 * * *")];
+        let mut refused = attempt("purge-expired-sessions", "r-1", at(24, 3, 0), 1, false);
+        refused.error_json = Some(json!({
+            "message": "refused: missing Run on chronon_job.purge-expired-sessions"
+        }));
+        let attention = attention_from(&jobs, &[refused.clone()], &HashMap::new(), now(), TICK);
+        assert_eq!(attention.items, []);
+        let stats = dashboard_stats_from_jobs_and_runs(&jobs, &[refused], now());
+        assert_eq!(stats.failing_jobs, 0);
+        assert_eq!(stats.worked_24h_permille, None);
     }
 
     #[test]
