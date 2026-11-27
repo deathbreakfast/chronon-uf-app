@@ -1,3 +1,6 @@
+mod charts;
+mod run_trend_card;
+
 use leptos::prelude::*;
 use orbital::components::{Caption1, Card, CardContent, ContentContainer, SpacingSize, Title3};
 use orbital::primitives::Flex;
@@ -8,8 +11,10 @@ use crate::components::{
 };
 use crate::live::use_chronon_poll_tick;
 use crate::server::get_runs_caption;
+use run_trend_card::RunTrendCard;
 
-/// Runs list page — every run with its retries folded in, filterable by result, time and job.
+/// Runs list page — every run with its retries folded in, filterable by result, time and job,
+/// with the run outcomes chart under the table.
 #[component]
 pub fn ChrononRunsPage() -> impl IntoView {
     let poll_tick = use_chronon_poll_tick();
@@ -68,6 +73,7 @@ pub fn ChrononRunsPage() -> impl IntoView {
                         </div>
                     </CardContent>
                 </Card>
+                <RunTrendCard />
             </Flex>
         </ContentContainer>
         </div>

@@ -2,178 +2,129 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_navigate;
 use leptos_router::NavigateOptions;
 use orbital::components::{
-    Body1, Caption1, Card, CardContent, EmptyState, Skeleton, SkeletonItem, SkeletonItemSize,
-    SpacingSize, Subtitle2,
+    Body1, Caption1, Card, CardContent, CardHeader, EmptyState, SpacingSize, Subtitle2,
 };
 use orbital::primitives::{
-    Flex, MessageBar, MessageBarIntent, Table, TableBody, TableCell, TableCellLayout, TableHeader,
-    TableHeaderCell, TableRow,
+    Flex, FlexAlign, FlexJustify, Link, MessageBar, MessageBarIntent, Table, TableBody, TableCell,
+    TableHeader, TableHeaderCell, TableRow,
 };
 
-use crate::components::chronon_card_content;
+use super::{DashboardData, TableSkeletonRows};
 use crate::components::RunStatusBadge;
-use crate::server::RecentRun;
-use crate::utils::{format_duration, format_started_at};
+use crate::server::RunSummary;
 
-const SKELETON_ROW_COUNT: usize = 5;
+const SKELETON_ROW_COUNT: usize = 6;
 
-/// Recent runs table with status badges and click-to-navigate.
+/// `Today, 09:35` for an RFC 3339 time.
+fn started_label(started_at: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(started_at).map_or_else(
+        |_| started_at.to_string(),
+        |t| chronon_backend::day_time_label(t.with_timezone(&chrono::Utc), chrono::Utc::now()),
+    )
+}
+
+/// Recent runs: the newest runs with retries folded in, who started them, and a row click to
+/// the run.
 #[component]
 pub fn RecentRunsTable(
-    /// Resource that loads the runs data.
-    runs_res: Resource<Result<Vec<RecentRun>, ServerFnError>>,
+    /// The dashboard's loads.
+    data: DashboardData,
 ) -> impl IntoView {
-    let navigate = use_navigate();
-    let nav_store = StoredValue::new(navigate);
-    let (card_content_style, card_content_class) = chronon_card_content();
-    let card_content_class = StoredValue::new(card_content_class);
-
-    let runs = Memo::new(move |_| runs_res.get().and_then(Result::ok).unwrap_or_default());
-
-    let (style_sheet, class_names) = turf::inline_style_sheet_values! {
-        .Table { width: 100%; }
-        .Row { cursor: pointer; }
-        .Row:hover { background: var(--colorNeutralBackground1Hover); }
-        .JobLink { color: var(--colorBrandForeground1); }
-        .Duration { font-variant-numeric: tabular-nums; }
-    };
-
+    let runs_res = data.recent;
     view! {
-        <style>{card_content_style}</style>
-        <style>{style_sheet}</style>
         <div id="chronon-dashboard-recent-runs">
-        <Flex vertical=true gap=SpacingSize::Size160.flex_gap()>
-            <Subtitle2>"Recent Runs"</Subtitle2>
-
-            <Transition fallback=move || view! { <RunsTableSkeleton /> }>
-                {move || runs_res.get().map(|r| match r {
-                    Ok(ref list) if list.is_empty() => {
-                        let content_class = card_content_class.get_value();
-                        view! {
-                            <Card>
-                                <CardContent class=content_class>
-                                    <EmptyState
-                                        message="No runs yet."
-                                        description="Runs appear here after jobs execute. Create a job or trigger Run Now."
-                                    />
-                                </CardContent>
-                            </Card>
-                        }.into_any()
-                    }
-                    Ok(_) => {
-                        let content_class = card_content_class.get_value();
-                        view! {
-                            <Card>
-                                <CardContent class=content_class>
-                                    <Table class=class_names.table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHeaderCell><Caption1>"Job"</Caption1></TableHeaderCell>
-                                                <TableHeaderCell><Caption1>"Status"</Caption1></TableHeaderCell>
-                                                <TableHeaderCell><Caption1>"Started"</Caption1></TableHeaderCell>
-                                                <TableHeaderCell><Caption1>"Duration"</Caption1></TableHeaderCell>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            <For
-                                                each=move || runs.get()
-                                                key=|run| run.id.clone()
-                                                let:run
-                                            >
-                                                {
-                                                    let run_id = run.id.clone();
-                                                    let nav = nav_store.get_value();
-                                                    view! {
-                                                        <TableRow
-                                                            class=class_names.row
-                                                            on:click=move |_| {
-                                                                let run_id = run_id.clone();
-                                                                nav(&chronon_backend::chronon_run_path(&run_id), NavigateOptions::default());
-                                                            }
-                                                        >
-                                                            <TableCell>
-                                                                <Body1 class=class_names.job_link>{run.job_name.clone()}</Body1>
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                <RunStatusBadge status=run.status />
-                                                            </TableCell>
-                                                            <TableCell>{format_started_at(&run.started_at)}</TableCell>
-                                                            <TableCell class=class_names.duration>{format_duration(run.duration_ms)}</TableCell>
-                                                        </TableRow>
-                                                    }
-                                                }
-                                            </For>
-                                        </TableBody>
-                                    </Table>
-                                </CardContent>
-                            </Card>
-                        }.into_any()
-                    }
-                    Err(err) => view! {
-                        <MessageBar intent=MessageBarIntent::Error>
-                            "Failed to load runs: " {err.to_string()}
-                        </MessageBar>
-                    }.into_any(),
-                })}
-            </Transition>
-        </Flex>
+        <Card>
+            <CardHeader>
+                <Flex justify=FlexJustify::SpaceBetween align=FlexAlign::Center>
+                    <Subtitle2>"Recent runs"</Subtitle2>
+                    <span data-testid="chronon-recent-runs-all-runs">
+                        <Link href=crate::paths::RUNS>"All runs"</Link>
+                    </span>
+                </Flex>
+            </CardHeader>
+            <CardContent>
+                <Transition fallback=move || view! { <RecentRunsRows rows=None /> }>
+                    {move || runs_res.get().map(|r| match r {
+                        Ok(list) if list.is_empty() => view! {
+                            <EmptyState
+                                message="No runs yet."
+                                description="Runs appear here after jobs run. Create a job or use Run now."
+                            />
+                        }.into_any(),
+                        Ok(list) => view! { <RecentRunsRows rows=Some(list) /> }.into_any(),
+                        Err(_) if data.outage() => ().into_any(),
+                        Err(err) => view! {
+                            <MessageBar intent=MessageBarIntent::Error>
+                                "Failed to load runs: " {err.to_string()}
+                            </MessageBar>
+                        }.into_any(),
+                    })}
+                </Transition>
+            </CardContent>
+        </Card>
         </div>
     }
 }
 
-/// Skeleton table with real column headers and placeholder rows.
+/// Job / Result / Started / Started by table; `None` shows skeleton rows under the headers.
 #[component]
-fn RunsTableSkeleton() -> impl IntoView {
-    let skeleton_size = Signal::from(SkeletonItemSize::S16);
-    let (card_content_style, card_content_class) = chronon_card_content();
+fn RecentRunsRows(rows: Option<Vec<RunSummary>>) -> impl IntoView {
+    let navigate = use_navigate();
+    let nav_store = StoredValue::new(navigate);
     let (style_sheet, class_names) = turf::inline_style_sheet_values! {
-        .Table { width: 100%; }
+        .Row { cursor: pointer; }
+        .Row:hover { background: var(--colorNeutralBackground1Hover); }
     };
 
     view! {
-        <style>{card_content_style}</style>
         <style>{style_sheet}</style>
-        <Card>
-            <CardContent class=card_content_class>
-                <Table class=class_names.table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHeaderCell><Caption1>"Job"</Caption1></TableHeaderCell>
-                            <TableHeaderCell><Caption1>"Status"</Caption1></TableHeaderCell>
-                            <TableHeaderCell><Caption1>"Started"</Caption1></TableHeaderCell>
-                            <TableHeaderCell><Caption1>"Duration"</Caption1></TableHeaderCell>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <Skeleton>
-                            {(0..SKELETON_ROW_COUNT).map(|_| view! {
-                                <TableRow>
-                                    <TableCell>
-                                        <TableCellLayout>
-                                            <SkeletonItem size=skeleton_size />
-                                        </TableCellLayout>
-                                    </TableCell>
-                                    <TableCell>
-                                        <TableCellLayout>
-                                            <SkeletonItem size=skeleton_size />
-                                        </TableCellLayout>
-                                    </TableCell>
-                                    <TableCell>
-                                        <TableCellLayout>
-                                            <SkeletonItem size=skeleton_size />
-                                        </TableCellLayout>
-                                    </TableCell>
-                                    <TableCell>
-                                        <TableCellLayout>
-                                            <SkeletonItem size=skeleton_size />
-                                        </TableCellLayout>
-                                    </TableCell>
-                                </TableRow>
-                            }).collect_view()}
-                        </Skeleton>
-                    </TableBody>
-                </Table>
-            </CardContent>
-        </Card>
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHeaderCell>"Job"</TableHeaderCell>
+                    <TableHeaderCell>"Result"</TableHeaderCell>
+                    <TableHeaderCell>"Started"</TableHeaderCell>
+                    <TableHeaderCell>"Started by"</TableHeaderCell>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {rows.map_or_else(
+                    || view! { <TableSkeletonRows rows=SKELETON_ROW_COUNT cols=4 /> }.into_any(),
+                    |rows| rows.into_iter().map(|run| {
+                        let run_href = chronon_backend::chronon_run_path(&run.root_run_id);
+                        let job_href = chronon_backend::chronon_job_path(&run.job_id);
+                        let attempts = (run.attempts > 1)
+                            .then(|| format!("\u{b7} {n} of {n} attempts", n = run.attempts));
+                        let nav = nav_store.get_value();
+                        view! {
+                            <TableRow
+                                class=class_names.row
+                                attr:data-testid="chronon-recent-run-row"
+                                on:click=move |_| nav(&run_href, NavigateOptions::default())
+                            >
+                                <TableCell>
+                                    // The job link opens the job, not the run.
+                                    <span on:click=|ev| ev.stop_propagation()>
+                                        <Link href=job_href>{run.job_name}</Link>
+                                    </span>
+                                </TableCell>
+                                <TableCell>
+                                    <Flex align=FlexAlign::Center gap=SpacingSize::Size80.flex_gap()>
+                                        <RunStatusBadge status=run.result />
+                                        {attempts.map(|a| view! { <Caption1>{a}</Caption1> })}
+                                    </Flex>
+                                </TableCell>
+                                <TableCell>
+                                    <Body1>{started_label(&run.started_at)}</Body1>
+                                </TableCell>
+                                <TableCell>
+                                    <Caption1>{run.started_by.short_label()}</Caption1>
+                                </TableCell>
+                            </TableRow>
+                        }
+                    }).collect_view().into_any(),
+                )}
+            </TableBody>
+        </Table>
     }
 }

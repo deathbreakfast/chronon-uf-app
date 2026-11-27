@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-use leptos_router::components::A;
 use orbital::components::{
     Button, Caption1, Card, CardContent, CardHeader, Flex, FlexGap, FlexWrap, InfoLabel,
     InfoLabelInfo, MessageBar, MessageBarIntent, Skeleton, SkeletonItem, Subtitle2,
@@ -12,7 +11,7 @@ use crate::server::get_run_stats_series;
 const RANGE_24H: i64 = 86_400;
 const RANGE_7D: i64 = 604_800;
 
-/// Dashboard card showing a success/failure run-count trend chart with a selectable time range.
+/// Runs page card showing a success/failure run-count trend chart with a selectable time range.
 #[component]
 pub fn RunTrendCard() -> impl IntoView {
     let range_secs = RwSignal::new(RANGE_7D);
@@ -24,7 +23,6 @@ pub fn RunTrendCard() -> impl IntoView {
     let (style_sheet, class_names) = turf::inline_style_sheet_values! {
         .ChartSkeleton { width: 100%; height: 280px; }
         .Toolbar { margin-bottom: var(--spacingVerticalM); }
-        .FooterLink { margin-top: var(--spacingVerticalM); }
     };
 
     view! {
@@ -98,16 +96,6 @@ pub fn RunTrendCard() -> impl IntoView {
                             }.into_any(),
                         })}
                     </Transition>
-                </div>
-
-                <div
-                    id="chronon-run-trend-view-all"
-                    class=class_names.footer_link
-                    data-testid="run-trend-view-all"
-                >
-                    <A href=crate::paths::RUNS>
-                        <Caption1>"View all runs →"</Caption1>
-                    </A>
                 </div>
             </CardContent>
         </Card>

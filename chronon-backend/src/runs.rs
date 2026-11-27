@@ -186,14 +186,14 @@ pub fn find_run_group<'a>(runs: &'a [CoreRun], run_id: &str) -> Option<RunGroup<
         .find(|group| group.iter().any(|r| r.run_id == run_id))
 }
 
-const fn is_failed(status: CoreRunStatus) -> bool {
+pub const fn is_failed(status: CoreRunStatus) -> bool {
     matches!(
         status,
         CoreRunStatus::Failed | CoreRunStatus::Timeout | CoreRunStatus::Canceled
     )
 }
 
-fn started_time(run: &CoreRun) -> DateTime<Utc> {
+pub fn started_time(run: &CoreRun) -> DateTime<Utc> {
     run.started_at.unwrap_or(run.scheduled_for)
 }
 

@@ -1,5 +1,6 @@
 pub mod edit_form;
 pub mod header;
+pub mod history;
 pub mod info_card;
 pub mod pause_dialog;
 pub mod recent_runs;
@@ -9,6 +10,7 @@ pub mod schedule_dialog;
 
 pub use edit_form::JobEditForm;
 pub use header::JobDetailHeader;
+pub use history::JobHistory;
 pub use info_card::JobInfoCard;
 pub use pause_dialog::{format_conflict, PauseDialog, PausedBanner};
 pub use recent_runs::{FailingBanner, JobRecentRuns};

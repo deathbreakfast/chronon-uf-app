@@ -529,6 +529,8 @@ fn dashboard_stats_aggregates_counts_happy_path() {
         ),
     ];
     let stats = dashboard_stats_from_jobs_and_runs(&[active, paused], &runs, today);
+    // Worked (24h): r1 and r-old worked, r2 failed, r3 is still going.
+    assert_eq!(stats.worked_24h_permille, Some(667));
     assert_eq!(stats.total_jobs, 2);
     assert_eq!(stats.active_jobs, 1);
     assert_eq!(stats.paused_jobs, 1);

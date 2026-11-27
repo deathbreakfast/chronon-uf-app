@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 use leptos_router::hooks::{use_location, use_navigate, use_query_map};
 use leptos_router::NavigateOptions;
-use orbital::components::{Caption1, SpacingSize};
+use orbital::components::SpacingSize;
 use orbital::primitives::{
     Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, Flex, MessageBar,
     MessageBarBody, MessageBarIntent, Tab, TabList,
@@ -16,9 +16,9 @@ use super::actions::{
     make_cancel_callback, make_edit_callback, make_save_callback, open_run_now, JobDetailFormState,
 };
 use super::components::{
-    FailingBanner, JobDetailHeader, JobEditForm, JobInfoCard, JobRecentRuns, PauseDialog,
-    PausedBanner, RunNowDialog, RunNowDialogInput, RunStarted, RunStartedNotice, ScheduleCard,
-    ScheduleDialog,
+    FailingBanner, JobDetailHeader, JobEditForm, JobHistory, JobInfoCard, JobRecentRuns,
+    PauseDialog, PausedBanner, RunNowDialog, RunNowDialogInput, RunStarted, RunStartedNotice,
+    ScheduleCard, ScheduleDialog,
 };
 use super::display::{created_message, param_signals_for_edit};
 use crate::live::{
@@ -302,7 +302,9 @@ pub(super) fn JobDetailLoaded(
                 </Show>
             </div>
             <div data-testid="job-tab-history" hidden=move || tab.get() != "history">
-                <Caption1>"Revision history for this job will appear here."</Caption1>
+                <Show when=move || can_view.get() fallback=denied>
+                    <JobHistory ctx=ctx />
+                </Show>
             </div>
             // Mounted with the page like the other panels, so opening the tab doesn't reload it.
             <div data-testid="job-tab-access" hidden=move || tab.get() != "access">

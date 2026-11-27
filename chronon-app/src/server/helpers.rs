@@ -74,7 +74,7 @@ pub(super) async fn actor_display_names<'a>(
     for id in ids {
         let profile = UserProfile::query(
             v,
-            valence::use_!(r"In **Chronon job details**, we **read the display name on a person's profile** so the paused banner and the Edit schedule conflict message say who paused or last saved the job by name instead of a user id. Only the display name is used, and only where the viewer may already read the profile."),
+            valence::use_!(r"In **Chronon** job pages, the History tab and the dashboard, we **read the display name on a person's profile** to say who saved a revision, paused a job or last edited it by name instead of a user id. Only the display name is used, and only where the viewer may already read the profile."),
         )
         .where_user(RecordPredicate::Equals(RecordId::new("user", id)))
         .first()

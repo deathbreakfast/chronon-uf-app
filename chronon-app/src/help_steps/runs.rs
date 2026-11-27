@@ -85,3 +85,22 @@ pub fn ChrononRunsOpenHelp() -> impl IntoView {
         &[],
     )
 }
+
+/// Run outcomes chart under the runs table.
+#[help_spotlight_step(
+    route = "/chronon/runs",
+    feature_highlight = "chronon-runs-trend",
+    title = "How runs are finishing",
+    spotlight = "chronon-run-trend-card",
+    position = "top",
+    order = 50
+)]
+#[component]
+pub fn ChrononRunsTrendHelp() -> impl IntoView {
+    help_stack(
+        "help-step-chronon-runs-trend",
+        "Compare worked and failed runs over time, when you want the reliability story rather than one error.",
+        Some("Switch between 24h and 7d to change the window."),
+        &[],
+    )
+}

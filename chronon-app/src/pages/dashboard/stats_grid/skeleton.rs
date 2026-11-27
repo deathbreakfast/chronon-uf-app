@@ -1,6 +1,8 @@
 use leptos::prelude::*;
-use orbital::components::{Caption1, Skeleton, SkeletonItem, SkeletonItemSize, SpacingSize};
-use orbital::primitives::{Card, Flex, FlexAlign, FlexWrap, Icon};
+use orbital::components::{
+    AutoGrid, Caption1, Skeleton, SkeletonItem, SkeletonItemSize, SpacingSize,
+};
+use orbital::primitives::{Card, Flex, FlexAlign, Icon};
 
 use super::kpis::KPI_DEFS;
 
@@ -14,14 +16,13 @@ pub fn ChrononStatCardSkeleton(
 ) -> impl IntoView {
     let value_skeleton = Signal::from(SkeletonItemSize::S32);
     let (style_sheet, class_names) = turf::inline_style_sheet_values! {
-        .Card { min-width: 140px; flex: 1; }
         .Label { color: var(--orb-color-text-tertiary); }
         .ValueSkeleton { width: 4rem; }
     };
 
     view! {
         <style>{style_sheet}</style>
-        <Card class=class_names.card>
+        <Card>
             <Flex vertical=true gap=SpacingSize::Size80.flex_gap() padding=SpacingSize::Size160.inset()>
                 <Flex align=FlexAlign::Center gap=SpacingSize::Size80.flex_gap()>
                     {icon.map(|icon| view! { <Icon icon=icon /> })}
@@ -35,11 +36,11 @@ pub fn ChrononStatCardSkeleton(
     }
 }
 
-/// Skeleton row matching the seven dashboard KPI cards.
+/// Skeleton grid matching the dashboard KPI cards.
 #[component]
 pub fn ChrononStatsSkeleton() -> impl IntoView {
     view! {
-        <Flex gap=SpacingSize::Size160.flex_gap() wrap=FlexWrap::Wrap>
+        <AutoGrid min=super::STAT_CARD_MIN>
             {KPI_DEFS.iter().map(|def| {
                 view! {
                     <div data-testid=def.test_id>
@@ -47,6 +48,6 @@ pub fn ChrononStatsSkeleton() -> impl IntoView {
                     </div>
                 }
             }).collect_view()}
-        </Flex>
+        </AutoGrid>
     }
 }
